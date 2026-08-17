@@ -1,0 +1,8 @@
+{
+  "artifact": null,
+  "kind": "deterministic_test_and_demo_scorer",
+  "model_version": "heuristic-nli-v1",
+  "network_required": false,
+  "production_decision_model": false
+}
+

@@ -1,0 +1,16 @@
+.git
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/node_modules
+**/.next
+**/coverage
+**/playwright-report
+**/test-results
+artifacts/models
+ml/data/generated
+ml/evaluation/reports
+*.sqlite3
+*.db
+

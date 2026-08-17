@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      ACE_DATABASE_URL: sqlite:////data/ace.sqlite3
+      ACE_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      ACE_MODEL_MODE: artifact
+      ACE_CATBOOST_ARTIFACT: /workspace/artifacts/models/catboost-v1.cbm
+      ACE_CATBOOST_MANIFEST: /workspace/artifacts/models/catboost-v1.manifest.json
+      ACE_EVALUATION_REPORT: /workspace/artifacts/reports/evaluation-summary.json
+    volumes:
+      - ace-data:/data
+      - ./artifacts:/workspace/artifacts:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  ace-data:

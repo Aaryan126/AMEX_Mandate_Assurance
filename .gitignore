@@ -1,0 +1,75 @@
+# Local product-planning and presentation material
+/prd.md
+/docs/demo-script.md
+
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python environments, caches, coverage, and packages
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Node and Next.js outputs
+node_modules/
+.next/
+.turbo/
+coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Browser-test artifacts
+playwright-report/
+test-results/
+blob-report/
+
+# Generated datasets, model binaries, and evaluation reports
+artifacts/models/
+artifacts/reports/
+ml/data/generated/
+ml/evaluation/reports/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+
+# IDE and operating-system metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.code-workspace
+
