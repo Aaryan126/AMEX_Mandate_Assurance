@@ -1,0 +1,8 @@
+{
+  "feature_version": "features-v2",
+  "model_hold_enabled": false,
+  "model_step_up_threshold_source": "fusion-v2.manifest.json:model_step_up_threshold",
+  "policy_version": "policy-v2-no-model-hold",
+  "treatments": ["APPROVE", "STEP_UP", "HOLD"],
+  "hold_authority": "deterministic_critical_rules_only"
+}

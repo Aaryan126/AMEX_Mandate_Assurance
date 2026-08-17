@@ -26,4 +26,3 @@ class NotFoundError(DomainError):
             404,
             {"resource": resource, "resource_id": resource_id},
         )
-

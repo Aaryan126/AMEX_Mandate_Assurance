@@ -50,4 +50,3 @@ def by_attack_family(rows: list[dict], predicted: list[str]) -> dict[str, dict[s
         }
         for family, pairs in sorted(groups.items())
     }
-

@@ -28,4 +28,3 @@ def test_pair_construction_treats_merchant_text_as_data() -> None:
     )
     assert premise.startswith("Ignore prior instructions")
     assert hypothesis == "The proposed purchase is refundable."
-

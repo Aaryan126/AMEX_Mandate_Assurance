@@ -101,7 +101,7 @@ class TransformersNliScorer:
 def _label_probability(probabilities: dict[str, float], target: str) -> float:
     aliases: dict[str, tuple[str, ...]] = {
         "contradiction": ("contradiction", "label_0"),
-        "entailment": ("entailment", "label_1", "label_2"),
+        "entailment": ("entailment", "label_2"),
         "neutral": ("neutral", "label_1"),
     }
     for alias in aliases[target]:
@@ -115,4 +115,3 @@ def pair_from_evidence(constraint: dict[str, Any], evidence_text: str) -> tuple[
     if not value:
         raise ValueError("semantic constraint requires a value")
     return evidence_text.strip(), f"The proposed purchase is {value}."
-

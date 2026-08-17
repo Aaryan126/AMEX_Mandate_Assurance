@@ -62,4 +62,3 @@ def verify_reference(reference: str, proposal: MandateProposal) -> bool:
         and claims.get("agent_id") == proposal.agent_id
         and claims.get("mandate_digest") == proposal_digest(proposal)
     )
-

@@ -1,6 +1,8 @@
 # Local product-planning and presentation material
 /prd.md
 /docs/demo-script.md
+/products_train.csv
+/sessions_train.csv
 
 # Environment variables and local secrets
 .env
@@ -55,7 +57,11 @@ blob-report/
 # Generated datasets, model binaries, and evaluation reports
 artifacts/models/
 artifacts/reports/
+artifacts/base-models/
 ml/data/generated/
+ml/data/raw/
+ml/data/normalized/
+ml/data/annotations/
 ml/evaluation/reports/
 
 # Logs and temporary files
@@ -72,4 +78,3 @@ Thumbs.db
 .idea/
 .vscode/
 *.code-workspace
-

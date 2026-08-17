@@ -157,10 +157,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/annotations/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Next Annotation Route */
+        get: operations["next_annotation_route_internal_annotations_next_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/annotations/{example_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Annotation Route */
+        post: operations["review_annotation_route_internal_annotations__example_id__reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/annotations/{example_id}/adjudicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adjudicate Annotation Route */
+        post: operations["adjudicate_annotation_route_internal_annotations__example_id__adjudicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/annotations/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Annotation Progress Route */
+        get: operations["annotation_progress_route_internal_annotations_progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnnotationDecision */
+        AnnotationDecision: {
+            /** Reviewer Id */
+            reviewer_id: string;
+            /**
+             * Deviation
+             * @enum {string}
+             */
+            deviation: "MATCH" | "VIOLATION" | "AMBIGUOUS";
+            /**
+             * Semantic Label
+             * @enum {string}
+             */
+            semantic_label: "ENTAILMENT" | "CONTRADICTION" | "NEUTRAL";
+            /**
+             * Expected Treatment
+             * @enum {string}
+             */
+            expected_treatment: "APPROVE" | "STEP_UP" | "HOLD";
+            /** Violation Types */
+            violation_types?: string[];
+            /** Confidence */
+            confidence: number;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /** Adjudicator Id */
+            adjudicator_id: string;
+        };
+        /** AnnotationItem */
+        AnnotationItem: {
+            /** Example */
+            example: {
+                [key: string]: unknown;
+            };
+            /** Completed Reviews */
+            completed_reviews: number;
+            /** Needs Adjudication */
+            needs_adjudication: boolean;
+        };
+        /** AnnotationProgress */
+        AnnotationProgress: {
+            /** Total */
+            total: number;
+            /** Unreviewed */
+            unreviewed: number;
+            /** Single Review */
+            single_review: number;
+            /** Agreed */
+            agreed: number;
+            /** Needs Adjudication */
+            needs_adjudication: number;
+            /** Adjudicated */
+            adjudicated: number;
+        };
+        /** AnnotationReview */
+        AnnotationReview: {
+            /** Reviewer Id */
+            reviewer_id: string;
+            /**
+             * Deviation
+             * @enum {string}
+             */
+            deviation: "MATCH" | "VIOLATION" | "AMBIGUOUS";
+            /**
+             * Semantic Label
+             * @enum {string}
+             */
+            semantic_label: "ENTAILMENT" | "CONTRADICTION" | "NEUTRAL";
+            /**
+             * Expected Treatment
+             * @enum {string}
+             */
+            expected_treatment: "APPROVE" | "STEP_UP" | "HOLD";
+            /** Violation Types */
+            violation_types?: string[];
+            /** Confidence */
+            confidence: number;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
         /** ApprovalPolicy */
         ApprovalPolicy: {
             /**
@@ -938,6 +1092,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvaluationSummary"];
+                };
+            };
+        };
+    };
+    next_annotation_route_internal_annotations_next_get: {
+        parameters: {
+            query: {
+                reviewer_id: string;
+                adjudication_only?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationItem"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_annotation_route_internal_annotations__example_id__reviews_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                example_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationReview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjudicate_annotation_route_internal_annotations__example_id__adjudicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                example_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    annotation_progress_route_internal_annotations_progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationProgress"];
                 };
             };
         };

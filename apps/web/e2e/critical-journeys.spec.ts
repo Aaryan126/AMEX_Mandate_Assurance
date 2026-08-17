@@ -23,8 +23,14 @@ test("budget breach steps up and can be resolved", async ({ page }) => {
   await expect(page.getByText(/approved once by the card member/i)).toBeVisible();
 });
 
+test("semantic substitution escalates without a model-only hold", async ({ page }) => {
+  await authenticate(page);
+  await page.getByRole("button", { name: /semantic substitution/i }).click();
+  await expect(page.getByRole("heading", { name: /confirmation needed/i })).toBeVisible();
+  await expect(page.getByText("REQUIRED_ATTRIBUTE_CONTRADICTED")).toBeVisible();
+});
+
 for (const [scenario, reason] of [
-  ["Semantic substitution", "REQUIRED_ATTRIBUTE_CONTRADICTED"],
   ["Injected add-on", "PROHIBITED_OR_UNRELATED_ITEM"],
   ["Cumulative breach", "CUMULATIVE_BUDGET_EXCEEDED"],
 ] as const) {

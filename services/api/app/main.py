@@ -3,12 +3,19 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from .annotations import (
+    AnnotationDecision,
+    AnnotationItem,
+    AnnotationProgress,
+    AnnotationReview,
+    configured_annotation_store,
+)
 from .config import settings
 from .database import create_schema, get_session
 from .errors import DomainError
@@ -54,8 +61,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
-    allow_methods=["*"] ,
-    allow_headers=["*"] ,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -173,3 +180,36 @@ def audit_route(session_id: str, session: Session = Depends(get_session)) -> Aud
 @app.get("/v1/evaluation/summary", response_model=EvaluationSummary)
 def evaluation_route() -> EvaluationSummary:
     return evaluation_summary()
+
+
+@app.get("/internal/annotations/next", response_model=AnnotationItem | None)
+def next_annotation_route(
+    reviewer_id: str,
+    adjudication_only: bool = False,
+) -> AnnotationItem | None:
+    return configured_annotation_store().next_item(reviewer_id, adjudication_only=adjudication_only)
+
+
+@app.post("/internal/annotations/{example_id}/reviews", status_code=201)
+def review_annotation_route(example_id: str, review: AnnotationReview) -> dict[str, str]:
+    try:
+        configured_annotation_store().submit_review(example_id, review)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="annotation example not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "recorded"}
+
+
+@app.post("/internal/annotations/{example_id}/adjudicate", status_code=201)
+def adjudicate_annotation_route(example_id: str, decision: AnnotationDecision) -> dict[str, str]:
+    try:
+        configured_annotation_store().adjudicate(example_id, decision)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "recorded"}
+
+
+@app.get("/internal/annotations/progress", response_model=AnnotationProgress)
+def annotation_progress_route() -> AnnotationProgress:
+    return configured_annotation_store().progress()

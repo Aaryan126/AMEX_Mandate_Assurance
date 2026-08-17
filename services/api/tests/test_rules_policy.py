@@ -58,9 +58,9 @@ def test_single_cart_budget_excess_steps_up() -> None:
     assert "SINGLE_CART_BUDGET_EXCEEDED" in decision.reason_codes
 
 
-def test_non_refundable_cart_holds() -> None:
+def test_model_detected_semantic_contradiction_steps_up() -> None:
     decision, _ = treatment_for(cart(refundable=False))
-    assert decision.treatment == Treatment.HOLD
+    assert decision.treatment == Treatment.STEP_UP
     assert "REQUIRED_ATTRIBUTE_CONTRADICTED" in decision.reason_codes
 
 
@@ -93,3 +93,11 @@ def test_expired_mandate_holds() -> None:
     assert decision.treatment == Treatment.HOLD
     assert "MANDATE_EXPIRED_OR_NOT_YET_VALID" in decision.reason_codes
 
+
+def test_calibrated_model_score_can_step_up_but_never_model_hold() -> None:
+    decision = apply_policy([], [], structured_probability=0.91, model_step_up_threshold=0.8)
+    assert decision.treatment == Treatment.STEP_UP
+    assert "MODEL_RISK_THRESHOLD_EXCEEDED" in decision.reason_codes
+
+    below_threshold = apply_policy([], [], structured_probability=0.79, model_step_up_threshold=0.8)
+    assert below_threshold.treatment == Treatment.APPROVE

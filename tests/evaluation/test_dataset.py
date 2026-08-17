@@ -41,4 +41,3 @@ def test_dataset_manifest_is_reproducible(tmp_path) -> None:
     assert first["ambiguous_row_count"] == 50
     stored = json.loads((tmp_path / "first" / "manifest.json").read_text())
     assert stored == first
-

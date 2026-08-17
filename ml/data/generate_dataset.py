@@ -143,6 +143,7 @@ def _row(seed: SeedMandate, family: str, index: int, **updates: Any) -> dict[str
         "semantic_contradiction": 0.02,
         "semantic_neutral": 0.03,
         "hard_fail_count": 0,
+        "critical_hold_count": 0,
         "soft_warning_count": 0,
         "attack_family": family,
         "difficulty": "medium",
@@ -175,7 +176,7 @@ def generate_rows() -> list[dict[str, Any]]:
                     3,
                     semantic_contradiction=0.96,
                     label=1,
-                    expected_treatment="HOLD",
+                    expected_treatment="STEP_UP",
                 ),
                 _row(
                     seed,
@@ -183,6 +184,7 @@ def generate_rows() -> list[dict[str, Any]]:
                     4,
                     line_item_count=2,
                     hard_fail_count=1,
+                    critical_hold_count=1,
                     label=1,
                     expected_treatment="HOLD",
                 ),
@@ -206,6 +208,7 @@ def generate_rows() -> list[dict[str, Any]]:
                     fulfilled_amount_minor=round(seed.budget_minor * 0.57),
                     fulfillment_count=1,
                     hard_fail_count=1,
+                    critical_hold_count=1,
                     label=1,
                     expected_treatment="HOLD",
                 ),
@@ -249,4 +252,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

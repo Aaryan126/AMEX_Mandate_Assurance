@@ -10,6 +10,7 @@ TEMPLATES = {
     "SINGLE_CART_BUDGET_EXCEEDED": "The proposed purchase exceeds the authorized transaction budget.",
     "CUMULATIVE_BUDGET_EXCEEDED": "This purchase would exceed the mandate's remaining total budget.",
     "PROHIBITED_OR_UNRELATED_ITEM": "The cart contains an item that the mandate prohibits.",
+    "MERCHANT_NOT_AUTHORIZED": "The proposed merchant is not authorized by this mandate.",
     "ROUTE_EVIDENCE_MISSING": "The merchant evidence does not establish the required route.",
     "ROUTE_MISMATCH": "The itinerary route does not match the authorized route.",
     "TRAVEL_DATE_EVIDENCE_MISSING": "The merchant evidence does not establish the required travel dates.",
@@ -17,6 +18,9 @@ TEMPLATES = {
     "FULFILLMENT_LIMIT_EXCEEDED": "The mandate has already reached its fulfillment limit.",
     "REQUIRED_ATTRIBUTE_CONTRADICTED": "Trusted merchant evidence contradicts a required purchase attribute.",
     "REQUIRED_ATTRIBUTE_EVIDENCE_MISSING": "The cart does not provide enough evidence for a required attribute.",
+    "MODEL_RISK_THRESHOLD_EXCEEDED": (
+        "The purchase needs confirmation because its combined risk signals exceed the reviewed threshold."
+    ),
 }
 
 

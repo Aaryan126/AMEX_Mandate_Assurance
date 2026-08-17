@@ -49,7 +49,7 @@ from .schemas import (
     RevocationResponse,
     utc_now,
 )
-from .semantic import HeuristicSemanticScorer, SemanticScorer, UnavailableSemanticScorer
+from .semantic import SemanticScorer, configured_semantic_scorer
 from .structured import configured_structured_scorer
 
 
@@ -63,13 +63,9 @@ def request_hash(value) -> str:
     return hashlib.sha256(_json(value).encode()).hexdigest()
 
 
-def get_idempotent(
-    session: Session, scope: str, key: str, request_value, response_type
-):
+def get_idempotent(session: Session, scope: str, key: str, request_value, response_type):
     record = session.scalar(
-        select(IdempotencyRecord).where(
-            IdempotencyRecord.scope == scope, IdempotencyRecord.key == key
-        )
+        select(IdempotencyRecord).where(IdempotencyRecord.scope == scope, IdempotencyRecord.key == key)
     )
     if record is None:
         return None
@@ -193,9 +189,7 @@ def _create_mandate(
     return MandateView(mandate=mandate, state=state)
 
 
-def confirm_mandate(
-    session: Session, request: ConfirmMandateRequest, idempotency_key: str
-) -> MandateView:
+def confirm_mandate(session: Session, request: ConfirmMandateRequest, idempotency_key: str) -> MandateView:
     cached = get_idempotent(session, "confirm_mandate", idempotency_key, request, MandateView)
     if cached:
         return cached
@@ -230,9 +224,7 @@ def get_mandate(session: Session, mandate_id: str) -> MandateView:
 
 def revoke_mandate(session: Session, mandate_id: str, idempotency_key: str) -> RevocationResponse:
     request_scope = {"mandate_id": mandate_id}
-    cached = get_idempotent(
-        session, "revoke_mandate", idempotency_key, request_scope, RevocationResponse
-    )
+    cached = get_idempotent(session, "revoke_mandate", idempotency_key, request_scope, RevocationResponse)
     if cached:
         return cached
     mandate = session.get(MandateRecord, mandate_id)
@@ -240,9 +232,7 @@ def revoke_mandate(session: Session, mandate_id: str, idempotency_key: str) -> R
     if not mandate or not state:
         raise NotFoundError("mandate", mandate_id)
     if mandate.status != "active":
-        raise DomainError(
-            "MANDATE_NOT_ACTIVE", "Only an active mandate can be revoked.", 409
-        )
+        raise DomainError("MANDATE_NOT_ACTIVE", "Only an active mandate can be revoked.", 409)
     mandate.status = "revoked"
     state.status = "revoked"
     state.last_updated_at = utc_now()
@@ -254,14 +244,10 @@ def revoke_mandate(session: Session, mandate_id: str, idempotency_key: str) -> R
 
 
 def _semantic_scorer() -> SemanticScorer:
-    if settings.model_mode == "unavailable":
-        return UnavailableSemanticScorer()
-    return HeuristicSemanticScorer()
+    return configured_semantic_scorer()
 
 
-def _fulfill(
-    session: Session, state_record: MandateStateRecord, cart_id: str, amount_minor: int
-) -> None:
+def _fulfill(session: Session, state_record: MandateStateRecord, cart_id: str, amount_minor: int) -> None:
     transactions = json.loads(state_record.prior_transaction_ids_json)
     if cart_id in transactions:
         return
@@ -289,27 +275,33 @@ def _fulfill(
     session.expire(state_record)
 
 
-def evaluate_decision(
-    session: Session, request: EvaluateDecisionRequest, idempotency_key: str
-) -> DecisionResponse:
+def evaluate_decision(session: Session, request: EvaluateDecisionRequest, idempotency_key: str) -> DecisionResponse:
     cached = get_idempotent(session, "evaluate_decision", idempotency_key, request, DecisionResponse)
     if cached:
         return cached
     view = get_mandate(session, request.mandate_id)
     existing_cart = session.get(CartRecord, request.cart.cart_id)
     if existing_cart and existing_cart.payload_json != request.cart.model_dump_json():
-        raise DomainError(
-            "CART_ID_CONFLICT", "The cart ID is already associated with different evidence.", 409
-        )
+        raise DomainError("CART_ID_CONFLICT", "The cart ID is already associated with different evidence.", 409)
 
     rules = evaluate_rules(view.mandate, view.state, request.cart)
     scorer = _semantic_scorer()
     semantics = scorer.score(view.mandate.constraints, request.cart)
     structured_scorer = configured_structured_scorer()
-    structured_probability = structured_scorer.score(
-        view.mandate, view.state, request.cart, rules, semantics
+    expected_semantic_versions = structured_scorer.semantic_model_versions
+    if expected_semantic_versions and scorer.version not in expected_semantic_versions:
+        raise DomainError(
+            "MODEL_VERSION_MISMATCH",
+            "The fusion artifact is not bound to the active semantic model version.",
+            503,
+        )
+    structured_probability = structured_scorer.score(view.mandate, view.state, request.cart, rules, semantics)
+    policy = apply_policy(
+        rules,
+        semantics,
+        structured_probability,
+        structured_scorer.step_up_threshold,
     )
-    policy = apply_policy(rules, semantics, structured_probability)
     reason_codes = policy.reason_codes
     card_explanation, reviewer_explanation = explain(reason_codes)
     created_at = utc_now()
@@ -327,9 +319,9 @@ def evaluate_decision(
         semantic_results=semantics,
         model_versions=ModelVersions(
             semantic=scorer.version,
-            catboost=structured_scorer.version,
-            stacker=None,
-            calibrator=None,
+            catboost=structured_scorer.catboost_version,
+            stacker=structured_scorer.stacker_version,
+            calibrator=structured_scorer.calibrator_version,
             policy=settings.policy_version,
             features=settings.feature_version,
         ),
@@ -450,12 +442,8 @@ def resolve_decision(
         assert old_mandate is not None and old_state is not None
         old_mandate.status = "superseded"
         old_state.status = "superseded"
-        proposal = request.modified_proposal.model_copy(
-            update={"mandate_version": old_mandate.version + 1}
-        )
-        view = _create_mandate(
-            session, proposal, superseded_reference=old_mandate.authorization_reference
-        )
+        proposal = request.modified_proposal.model_copy(update={"mandate_version": old_mandate.version + 1})
+        view = _create_mandate(session, proposal, superseded_reference=old_mandate.authorization_reference)
         new_mandate_id = view.mandate.mandate_id
 
     decision.resolved_action = request.action.value
@@ -489,9 +477,7 @@ def resolve_decision(
 
 def get_audit_timeline(session: Session, session_id: str) -> AuditTimeline:
     records = session.scalars(
-        select(AuditEventRecord)
-        .where(AuditEventRecord.session_id == session_id)
-        .order_by(AuditEventRecord.created_at)
+        select(AuditEventRecord).where(AuditEventRecord.session_id == session_id).order_by(AuditEventRecord.created_at)
     ).all()
     if not records:
         raise NotFoundError("session", session_id)

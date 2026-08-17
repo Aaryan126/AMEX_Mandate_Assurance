@@ -1,0 +1,3 @@
+{"example_id":"1","query":"waterproof laptop backpack","query_id":"q1","product_id":"p1","product_locale":"us","esci_label":"E","large_version":1,"source_split":"train","product_title":"Waterproof 15-inch Laptop Backpack","product_description":"Sealed zipper commuter bag","product_bullet_point":"Fits most 15-inch laptops","product_brand":"Fixture","product_color":"Black"}
+{"example_id":"2","query":"防水 ノートパソコン バッグ","query_id":"q2","product_id":"p2","product_locale":"jp","esci_label":"S","large_version":1,"source_split":"train","product_title":"撥水ノートパソコンバッグ","product_description":"15インチ対応","product_bullet_point":"撥水加工","product_brand":"Fixture JP","product_color":"黒"}
+

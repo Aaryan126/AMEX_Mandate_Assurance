@@ -34,8 +34,194 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
+}
+
+.annotation-shell {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 48px clamp(20px, 5vw, 72px) 72px;
+}
+
+.annotation-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 30px;
+  align-items: end;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.annotation-header h1 {
+  color: var(--navy);
+  font-size: clamp(38px, 5vw, 64px);
+}
+
+.annotation-header > div > p:last-child,
+.annotation-empty p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.annotation-progress {
+  min-width: 160px;
+  text-align: right;
+}
+
+.annotation-progress strong,
+.annotation-progress span {
+  display: block;
+}
+
+.annotation-progress strong {
+  color: var(--blue);
+  font: 500 44px/1 Georgia, serif;
+}
+
+.annotation-progress span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.annotation-toolbar {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 360px) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 22px 0;
+}
+
+.annotation-toolbar .annotation-mode {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.annotation-toolbar label {
+  margin: 0;
+}
+
+.annotation-toolbar input,
+.annotation-form textarea {
+  border: 1px solid #cbd4e1;
+  border-radius: 8px;
+  padding: 11px 13px;
+  background: var(--white);
+}
+
+.annotation-error {
+  color: var(--red);
+  background: var(--red-soft);
+  padding: 12px 14px;
+  border-radius: 8px;
+}
+
+.annotation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 22px;
+}
+
+.annotation-evidence h2 {
+  line-height: 1.3;
+}
+
+.annotation-evidence dl {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 24px 0;
+}
+
+.annotation-evidence dl div {
+  padding: 11px;
+  background: var(--paper);
+  border-radius: 7px;
+}
+
+.annotation-evidence dt,
+.annotation-evidence dd {
+  margin: 0;
+  font-size: 11px;
+}
+
+.annotation-evidence dt {
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.annotation-evidence ul {
+  padding: 0;
+  list-style: none;
+}
+
+.annotation-evidence li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.annotation-evidence li span,
+.annotation-total {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.annotation-evidence pre {
+  overflow: auto;
+  padding: 12px;
+  background: var(--paper);
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.annotation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.annotation-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.annotation-form legend {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.annotation-options {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.annotation-options label {
+  margin: 0;
+  padding: 10px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.annotation-options input {
+  margin-right: 5px;
+}
+
+.annotation-empty {
+  min-height: 260px;
+  display: grid;
+  place-content: center;
+  text-align: center;
 }
 
 button:focus-visible,
@@ -676,8 +862,13 @@ footer {
 
 @media (max-width: 920px) {
   .hero-content,
-  .workspace-grid {
+  .workspace-grid,
+  .annotation-grid {
     grid-template-columns: 1fr;
+  }
+
+  .annotation-toolbar {
+    grid-template-columns: auto 1fr;
   }
 
   .hero-content {
@@ -707,6 +898,21 @@ footer {
 
   .hero-content {
     padding-top: 42px;
+  }
+
+  .annotation-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .annotation-progress {
+    text-align: left;
+  }
+
+  .annotation-toolbar,
+  .annotation-options,
+  .annotation-evidence dl {
+    grid-template-columns: 1fr;
   }
 
   .scenario-grid,

@@ -218,12 +218,12 @@ The natural-language-to-structured conversion may be LLM-assisted, but the struc
   ],
   "card_member_explanation": "The fare does not provide enough evidence that it is refundable.",
   "model_versions": {
-    "semantic": "nli-deberta-domain-v1",
-    "catboost": "catboost-v1",
+    "semantic": "english-nli-v3",
+    "catboost": "fusion-v2",
     "tabm": null,
-    "stacker": "stacker-v1",
-    "calibrator": "platt-v1",
-    "policy": "policy-v1"
+    "stacker": "logistic-stacker-v2",
+    "calibrator": "platt-calibrator-v2",
+    "policy": "policy-v2-no-model-hold"
   },
   "evidence_references": ["signed_demo_reference", "cart_signature_demo"],
   "created_at": "2026-08-15T10:15:02Z"
@@ -336,15 +336,18 @@ IF mandate invalid or severe hard violation:
     HOLD
 ELSE IF trusted evidence is insufficient for a required constraint:
     STEP_UP
-ELSE IF calibrated risk < approve_threshold:
-    APPROVE
-ELSE IF calibrated risk < decline_threshold:
+ELSE IF semantic contradiction is high:
+    STEP_UP
+ELSE IF calibrated risk >= model_step_up_threshold:
     STEP_UP
 ELSE:
-    HOLD
+    APPROVE
 ```
 
-Thresholds are selected from the target false-step-up rate and business-cost analysis, not from a generic probability cutoff.
+The current learned path is escalation-only: no semantic or fusion score may independently produce `HOLD`.
+`HOLD` requires an observable critical deterministic failure. The model step-up threshold is selected from
+the target false-step-up rate on validation data, not from a generic probability cutoff. Model-only hold
+requires real pilot outcomes and a separately approved policy version.
 
 ### Step 9 — Explain and audit
 
@@ -364,24 +367,30 @@ Persist the input references, feature schema, raw branch scores, calibrated scor
 
 **Failure behavior:** Invalid or absent security-critical evidence returns `NOT_EVALUABLE` or `FAIL` according to the constraint—not a guessed value.
 
-### 7.2 DeBERTa-v3 NLI cross-encoder
+### 7.2 English fine-tuned mDeBERTa-v3 NLI cross-encoder
 
-**Starting checkpoint:** [`cross-encoder/nli-deberta-v3-base`](https://huggingface.co/cross-encoder/nli-deberta-v3-base)
+**Starting checkpoint:** [`MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`](https://huggingface.co/MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli), pinned to commit `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`.
 
 **Why it exists:** Natural-language inference maps closely to the decision we need: cart evidence can support, contradict, or fail to establish a mandate constraint. A cross-encoder jointly attends to both texts and is more appropriate than standalone embedding distance for fine-grained contradiction.
 
 **Prototype use:**
 
 1. Establish zero-shot performance on the golden semantic set.
-2. Fine-tune only if domain errors justify it.
+2. Fine-tune on grouped English Option 1 constraint/evidence pairs.
 3. Train on individual constraint/evidence pairs, not entire unstructured sessions.
 4. Preserve the three-class logits.
 5. Temperature-calibrate on held-out semantic examples.
 6. Benchmark the small and base checkpoints, including batched p95 latency.
 
-The published checkpoint was trained on SNLI and MultiNLI and reports contradiction, entailment, and neutral outputs. Generic NLI benchmark performance does not establish payment-domain reliability, so domain evaluation is mandatory.
+The published checkpoint was trained on real MultiNLI, FEVER-NLI, and ANLI data and reports contradiction,
+entailment, and neutral outputs. Option 1 adds public ESCI evidence, weak labels, grounded counterfactuals,
+and a 6,000-example independent-review queue. The first automated pass is explicitly provisional LLM
+consensus followed by disagreement adjudication and a human audit. Generic NLI benchmark performance does not establish
+authorization-domain reliability, so domain evaluation remains mandatory.
 
-**APAC use:** Begin with an English demo. For multilingual deployment, build native-language evaluation sets and compare multilingual or local-language NLI models market by market. Do not translate silently in the authorization path without measuring translation-induced errors.
+**Initial language scope:** The first corpus is 100% English. Other languages remain out of scope until a
+separately reviewed corpus and per-language evaluation exist. Do not translate silently in the
+authorization path without measuring translation-induced errors.
 
 ### 7.3 CatBoost
 
@@ -448,13 +457,17 @@ Use Isolation Forest or a simple representation-distance score to detect unfamil
 
 ### Dataset construction
 
-1. Write at least 50 manually reviewed seed mandates.
-2. Create valid, violating, and ambiguous cart outcomes for each seed.
-3. Generate controlled variations without changing the intended label.
-4. Assign attack family, difficulty, evidence sufficiency, and expected policy outcome.
-5. Review the golden test set manually and freeze it.
+1. Acquire ESCI at an immutable Git revision and verify the Git LFS checksums.
+2. Build Option 1 as 60,000 English rows: 50% source-backed singles, 20% source-grounded
+   composites, 20% grounded counterfactuals, and a 10% review queue.
+3. Review 6,000 Option 1 rows with two independent LLM passes, adjudicate disagreements, and perform a
+   stratified human audit before treating any golden result as human-owned evidence.
+4. Build Option 2 as a 150,000-row public benchmark from Amazon-M2, UCI Online Retail II, BTS DB1B, and
+   USAspending: 70% public-record-backed examples and 30% grounded counterfactuals.
+5. Review 4,000 Option 2 rows and freeze the resolved golden labels.
 
-Synthetic generation must retain lineage back to the seed. Generated examples from one seed may not appear across multiple splits.
+All synthetic fields carry field-level provenance. Every counterfactual retains its parent and generator
+version. Parents, queries, invoices, and sequences may not appear across multiple splits.
 
 ### Split order
 
@@ -634,7 +647,7 @@ services/
     rules/
     explanations/
 ml/
-  data/                 # generation, validation, and split manifests
+  data/                 # schema, public adapters, review export, validation, and split manifests
   features/             # versioned feature computation
   semantic/             # NLI inference and fine-tuning
   tabular/              # CatBoost, TabM, optional TabPFN experiments
@@ -669,7 +682,7 @@ Model binaries and generated datasets should be reproducible from scripts and ma
 | [TabPFN, Nature 2025](https://www.nature.com/articles/s41586-024-08328-6) | Supports an offline small-data benchmark while documenting real-time inference limitations |
 | [Booking.com fraud research](https://arxiv.org/abs/2405.13692) | Supports a longer-term self-supervised tabular-transformer roadmap when abundant unlabeled transaction history becomes available |
 | [Contextual embeddings with ensemble classifiers](https://arxiv.org/abs/2411.01645) | Supports enriching structured models with language-derived semantic features |
-| [DeBERTa-v3 NLI checkpoint](https://huggingface.co/cross-encoder/nli-deberta-v3-base) | Provides the initial three-way semantic contradiction/entailment/neutral implementation |
+| [English DeBERTa-v3 NLI checkpoint](https://huggingface.co/MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli) | Provides the pinned English three-way semantic starting point trained on MNLI, FEVER-NLI, and ANLI |
 | [CatBoost documentation](https://catboost.ai/en/docs/) | Provides the primary structured model implementation and model-analysis tooling |
 | [Official TabM implementation](https://github.com/yandex-research/tabm) | Provides the supported package and correct training/inference guidance |
 
@@ -684,6 +697,7 @@ Model binaries and generated datasets should be reproducible from scripts and ma
 - Evaluate TabM as the DL challenger and include it only with measured lift.
 - Use logistic stacking and held-out calibration.
 - Use a three-outcome policy: approve, step up, hold/decline.
+- Permit learned models to trigger step-up but reserve hold for deterministic critical evidence until real pilot data exists.
 - Generate final explanations from structured evidence and reason codes.
 - Use trusted simulated cart evidence in the prototype.
 

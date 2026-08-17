@@ -9,7 +9,42 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-type ApiError = { error?: { message?: string; code?: string } };
+type ApiError = { detail?: string; error?: { message?: string; code?: string } };
+
+export type AnnotationItem = {
+  example: {
+    identity: { example_id: string };
+    mandate: { objective_text: string; constraints: Array<Record<string, unknown>> };
+    cart: {
+      total_amount_minor: number;
+      currency: string;
+      line_items: Array<{ description: string; evidence_text?: string }>;
+    };
+    context: { locale: string; domain: string };
+    provenance: { source_dataset: string; evidence_origin: string; transformation: string };
+  };
+  completed_reviews: number;
+  needs_adjudication: boolean;
+};
+
+export type AnnotationProgress = {
+  total: number;
+  unreviewed: number;
+  single_review: number;
+  agreed: number;
+  needs_adjudication: number;
+  adjudicated: number;
+};
+
+export type AnnotationReview = {
+  reviewer_id: string;
+  deviation: "MATCH" | "VIOLATION" | "AMBIGUOUS";
+  semantic_label: "ENTAILMENT" | "CONTRADICTION" | "NEUTRAL";
+  expected_treatment: "APPROVE" | "STEP_UP" | "HOLD";
+  violation_types: string[];
+  confidence: number;
+  notes: string;
+};
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -21,7 +56,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiError;
-    throw new Error(body.error?.message ?? `Request failed with status ${response.status}`);
+    throw new Error(body.error?.message ?? body.detail ?? `Request failed with status ${response.status}`);
   }
   return response.json() as Promise<T>;
 }
@@ -64,5 +99,30 @@ export const api = {
   },
   evaluationSummary() {
     return request<EvaluationSummary>("/v1/evaluation/summary");
+  },
+  nextAnnotation(reviewerId: string, adjudicationOnly = false) {
+    const query = new URLSearchParams({
+      reviewer_id: reviewerId,
+      adjudication_only: String(adjudicationOnly),
+    });
+    return request<AnnotationItem | null>(`/internal/annotations/next?${query}`);
+  },
+  annotationProgress() {
+    return request<AnnotationProgress>("/internal/annotations/progress");
+  },
+  submitAnnotation(exampleId: string, review: AnnotationReview) {
+    return request<{ status: string }>(
+      `/internal/annotations/${encodeURIComponent(exampleId)}/reviews`,
+      { method: "POST", body: JSON.stringify(review) },
+    );
+  },
+  adjudicateAnnotation(exampleId: string, review: AnnotationReview) {
+    return request<{ status: string }>(
+      `/internal/annotations/${encodeURIComponent(exampleId)}/adjudicate`,
+      {
+        method: "POST",
+        body: JSON.stringify({ ...review, adjudicator_id: review.reviewer_id }),
+      },
+    );
   },
 };

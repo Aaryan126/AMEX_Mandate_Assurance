@@ -7,8 +7,7 @@ services:
       ACE_DATABASE_URL: sqlite:////data/ace.sqlite3
       ACE_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
       ACE_MODEL_MODE: artifact
-      ACE_CATBOOST_ARTIFACT: /workspace/artifacts/models/catboost-v1.cbm
-      ACE_CATBOOST_MANIFEST: /workspace/artifacts/models/catboost-v1.manifest.json
+      ACE_FUSION_MANIFEST: /workspace/artifacts/models/fusion-v2.serving.manifest.json
       ACE_EVALUATION_REPORT: /workspace/artifacts/reports/evaluation-summary.json
     volumes:
       - ace-data:/data

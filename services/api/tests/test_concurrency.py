@@ -57,4 +57,3 @@ def test_stale_fulfillment_update_fails_safely(tmp_path) -> None:
     finally:
         first.close()
         second.close()
-

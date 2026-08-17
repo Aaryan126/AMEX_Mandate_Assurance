@@ -27,4 +27,3 @@ def test_initial_migration_creates_expected_tables(tmp_path: Path) -> None:
         "idempotency_keys",
         "model_registry",
     } <= tables
-

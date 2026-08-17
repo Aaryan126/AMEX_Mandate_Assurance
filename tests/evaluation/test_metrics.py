@@ -37,4 +37,3 @@ def test_tabm_requires_lift_calibration_and_latency() -> None:
         challenger_p95_ms=2500,
     )
     assert too_slow["include_online"] is False
-

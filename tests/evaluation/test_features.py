@@ -16,4 +16,3 @@ def test_missing_history_is_not_an_adverse_feature() -> None:
     features = compute_features(row)
     assert "merchant_history" not in features
     assert features["missing_evidence_count"] == 0
-

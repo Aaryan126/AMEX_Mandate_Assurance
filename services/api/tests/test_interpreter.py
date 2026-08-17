@@ -26,4 +26,3 @@ def test_out_of_template_input_is_flagged_for_review() -> None:
     )
     assert response.warnings
     assert response.proposal.constraints[0].constraint_id == "c_objective"
-

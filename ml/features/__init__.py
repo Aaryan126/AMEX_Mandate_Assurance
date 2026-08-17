@@ -1,2 +1,1 @@
 """Versioned structured feature computation."""
-

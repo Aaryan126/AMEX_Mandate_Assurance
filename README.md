@@ -138,7 +138,13 @@ The default policy behaves as follows:
 | Active mandate, trusted evidence, all required constraints satisfied, low calibrated risk | `APPROVE` |
 | Remediable commercial violation, such as a single-cart budget excess | `STEP_UP` |
 | Required evidence is missing or uncertain | `STEP_UP` |
-| Invalid/revoked/expired mandate, replay, cumulative breach, prohibited item, or confirmed semantic contradiction | `HOLD` |
+| Semantic contradiction or calibrated model risk above the validated threshold | `STEP_UP` |
+| Invalid/revoked/expired mandate, replay, cumulative breach, prohibited item/category, unauthorized merchant, or fulfillment-limit breach | `HOLD` |
+
+The learned models are intentionally **escalation-only** at this stage. A calibrated score may move an
+otherwise clean action from `APPROVE` to `STEP_UP`; it cannot produce `HOLD` by itself. Enabling a
+model-only hold would require real pilot outcomes, an approved loss function, governance review, and a
+new versioned policy artifact.
 
 If a semantic model, structured model, calibration artifact, explanation layer, or state store is
 unavailable, the service follows an explicit fail-safe path. It never silently invents evidence or treats
@@ -169,14 +175,25 @@ an uncalibrated score as calibrated.
 
 ### Model and evaluation pipeline
 
-- 50 curated seed mandates and 300 deterministic mandate-cart pairs.
-- Valid, violating, and genuinely ambiguous examples across travel, retail, dining, recurring purchases,
-  and small-business procurement.
-- Grouped train, validation, calibration, and frozen golden splits that keep every seed's variants together.
-- CatBoost primary model, five-fold out-of-fold stacking, held-out calibration, and thresholds chosen only
-  from validation data.
-- Three-way semantic-scoring interface that preserves contradiction, entailment, and neutral probabilities.
-- Optional immutable-revision bootstrap for a local DeBERTa NLI artifact.
+- A strict canonical dataset schema with currency exponents, state, field-level real/synthetic provenance,
+  parent/sequence identity, labels, review state, and grouping keys.
+- Immutable, checksum-locked ESCI acquisition and a deterministic 60,000-row English-only Option 1
+  builder. The mix is 50% source-backed single-item judgments, 20% source-grounded composite carts, 20%
+  deterministic counterfactuals, and 10% independent-review queue.
+- Option 2 adapters for Amazon-M2, UCI Online Retail II, BTS DB1B, and USAspending, plus a deterministic
+  150,000-row builder using 70% public-record-backed examples and 30% grounded counterfactuals.
+- A local two-reviewer annotation service and `/annotate` UI. Label provenance distinguishes human,
+  LLM-consensus, mixed, and adjudicated outcomes; review data lives in its own SQLite database.
+- Grouped 70/10/10/10 train, validation, calibration, and frozen golden splits. Parents, children, query
+  groups, invoices, and sequences cannot cross splits.
+- English three-way NLI fine-tuning with grouped out-of-fold predictions for training rows and a
+  temperature chosen only on the calibration split.
+- CatBoost, five-fold out-of-fold logistic stacking, held-out Platt calibration, and a validation-selected
+  `STEP_UP` threshold. Fusion artifacts are JSON plus checksum-verified CatBoost, not executable pickle.
+- One `features-v2` computation contract imported by both offline training and the live API, with a parity
+  test that fails if the vectors diverge.
+- Golden evaluation that uses only observable evidence. `attack_family` is retained solely for grouped
+  reporting and cannot influence a prediction.
 - TabM inclusion gate requiring measurable lift, acceptable calibration, and p95 latency below two seconds.
 
 ## Demo scenarios
@@ -187,7 +204,7 @@ The default UI uses the mandate described above. Each scenario has a determinist
 |---|---|---|
 | Valid itinerary | Refundable, economy, nonstop, correct dates, S$840 | `APPROVE` |
 | Hard violation | Matching itinerary at S$960 | `STEP_UP` |
-| Semantic substitution | S$780 fare explicitly marked non-refundable | `HOLD` |
+| Semantic substitution | S$780 fare explicitly marked non-refundable | `STEP_UP` |
 | Injected outcome | Flight plus an unrelated gift-card subscription | `HOLD` |
 | Stateful violation | Two individually plausible S$500 fulfillments against S$900 total | First approves; second `HOLD` |
 | Uncertain evidence | S$810 fare with no reliable refundability evidence | `STEP_UP` |
@@ -200,7 +217,7 @@ not intentionally affect later stateful checks.
 ```text
 apps/web/                 Next.js UI, component tests, and Playwright journeys
 services/api/             FastAPI service, contracts, rules, policy, persistence, and migrations
-ml/data/                  Synthetic seed and mandate-cart generation
+ml/data/                  Canonical schema, public-source adapters, builders, reviews, and counterfactuals
 ml/features/              Versioned structured feature computation
 ml/semantic/              NLI pair construction, calibration, adapter, and artifact bootstrap
 ml/tabular/               CatBoost training and TabM inclusion gate
@@ -208,7 +225,7 @@ ml/fusion/                Out-of-fold stacking and held-out calibration
 ml/evaluation/            Metrics and frozen benchmark reporting
 artifacts/manifests/      Version and policy metadata committed to source
 artifacts/reports/        Generated benchmark summary consumed by the UI
-tests/evaluation/         Dataset, leakage, feature, calibration, and metric tests
+tests/                    Dataset, leakage, feature-parity, semantic, calibration, and metric tests
 docs/                     Threat model and presentation walkthrough
 ```
 
@@ -249,9 +266,10 @@ docker compose up --build
 > [!WARNING]
 > `docker compose down -v` deletes the local prototype database volume.
 
-The Docker workflow requires no cloud credentials. When generated CatBoost artifacts exist, the API loads
-and checksum-verifies them from the read-only artifact mount. Otherwise it falls back to the documented
-deterministic structured scorer.
+The base Docker workflow requires no cloud credentials and uses the deterministic semantic/structured
+fallback. A trained fusion bundle is loaded only when a promoted serving manifest **and** an explicitly
+configured, version-matching semantic artifact are both present; this prevents serving a fusion model with
+different semantic-score distributions than it saw in training.
 
 ## Develop and test locally
 
@@ -274,7 +292,8 @@ Run individual verification layers:
 python3 -m ruff check services/api/app services/api/tests services/api/migrations ml tests
 
 # Python tests
-python3 -m pytest services/api/tests tests -q
+python3 -m pytest services/api/tests -q
+python3 -m pytest tests -q
 
 # Frontend component tests
 npm --prefix apps/web test -- --run
@@ -302,45 +321,167 @@ Regenerate frontend API types whenever Pydantic contracts change:
 npm --prefix apps/web run types:api
 ```
 
-## Reproduce the model benchmark
+## Build and review Option 1
 
-Generate the dataset, train CatBoost and the fusion/calibration artifacts, select thresholds from the
-validation split, and evaluate the untouched golden split:
-
-```bash
-make evaluate
-```
-
-The result is written to `artifacts/reports/evaluation-summary.json`. Model binaries and generated datasets
-are intentionally excluded from source control; their manifests record the dataset hash, feature order,
-artifact checksum, random seed, calibration split, and policy thresholds.
-
-The current controlled synthetic benchmark passes the selected gate of:
-
-- at least 90% violation recall;
-- no more than 10% false step-ups;
-- no more than 2% false declines; and
-- under two seconds p95 local decision latency after warm-up.
-
-The present synthetic set is deliberately learnable and currently produces perfect classification and
-treatment metrics. This is **not evidence of production performance**. Expected calibration error is
-reported separately, and real deployment would require reviewed market-specific data, harder legitimate
-alternatives, multilingual evaluation, drift monitoring, fairness analysis, and substantially larger
-golden sets.
-
-## Optional local NLI model
-
-The normal demo is deterministic and offline. To evaluate the artifact-backed DeBERTa NLI adapter, install
-the optional semantic dependencies and bootstrap an immutable model revision:
+Option 1 is the first real/public-data-backed training corpus. ESCI provides the real query, product title,
+description, attributes, locale, and graded relevance judgment. It does **not** contain a Card Member
+mandate, cart price, budget, cumulative state, or treatment, so those fields are generated deterministically
+and marked synthetic at field level. This is deliberate: fabricating those fields is acceptable for
+pipeline development, while presenting them as observed financial behavior would not be.
 
 ```bash
-python3 -m pip install -e 'services/api[semantic]'
-python3 -m ml.semantic.bootstrap --revision <immutable-hugging-face-commit>
+# About 1.16 GB; resolves the branch to an immutable commit and records every checksum.
+make data-esci
+
+# Streams the parquet join with DuckDB and writes exactly 60,000 en-US canonical rows.
+make data-option1
+
+# Re-parse every row and verify uniqueness, provenance, grouped splits, count, and hash.
+make data-validate \
+  DATASET=ml/data/generated/option1-en/ace-esci-en-hybrid.jsonl \
+  MANIFEST=ml/data/generated/option1-en/manifest.json
 ```
 
-The runtime adapter refuses network downloads and loads only local artifacts. Fine-tuning or model
-selection should use mandate/evidence examples and a separate semantic calibration set rather than generic
-similarity labels.
+Generated data is gitignored. `ml/data/generated/option1-en/manifest.json` records source revision, checksums,
+row mix, locales, transformations, splits, review count, and final dataset hash.
+
+Start the separate local review service and web UI:
+
+```bash
+make annotate-api
+npm --prefix apps/web run dev
+```
+
+Open <http://localhost:3000/annotate>. Each of the 6,000 Option 1 review examples needs two independent
+reviews. Disagreements enter the adjudication queue. The service is disabled by default and its SQLite
+database is separate from the transaction-serving database.
+
+For a scalable provisional pass, prepare two independent OpenAI Batch API jobs. Reviewer A uses the pinned
+`gpt-5.4-2026-03-05` snapshot; reviewer B and disagreement adjudication use the pinned
+`gpt-5.5-2026-04-23` snapshot. Both use strict JSON schemas. LLM labels are explicitly stored as
+`llm_consensus` or `llm_adjudicated`, never as expert human labels.
+
+```bash
+python3 -m pip install -e 'services/api[annotation]'
+cp .env.annotation.example .env.annotation
+# Edit .env.annotation locally. Never commit it or paste the key into chat.
+
+make llm-prepare
+make llm-submit-a
+make llm-submit-b
+```
+
+Use `python3 -m ml.data.llm_annotations status`, `download`, and `import` for each returned state file,
+then `prepare-adjudication` for disagreements. Before any production claim, manually audit a stratified
+sample and have a human resolve every audited mismatch. LLM consensus is useful training supervision but
+is not a substitute for a human-owned golden set.
+
+After review is complete, freeze labels into a new immutable JSONL rather than mutating the source corpus:
+
+```bash
+make export-reviews \
+  DATASET=ml/data/generated/option1-en/ace-esci-en-hybrid.jsonl \
+  REVIEWS=ml/data/annotations/reviews-option1-en.sqlite3 \
+  OUTPUT=ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl
+```
+
+## Train the hybrid model pipeline
+
+The 24 GB M4 Pro can run the English NLI fine-tune through PyTorch MPS with dynamic padding and activation
+checkpointing. A local throughput benchmark found batch size 16 stable at roughly 6.97 examples/second and
+about 4.1 GB of MPS driver memory. Five grouped folds plus the final model remain compute-heavy even though
+memory is not the bottleneck. A CUDA host remains the faster fallback, not a prerequisite.
+
+The selected English base is `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` at commit
+`6f5cf0a2b59cabb106aca4c287eed12e357e90eb`. It starts from real MNLI, FEVER-NLI, and ANLI data,
+then is fine-tuned only on English public-evidence hybrid rows and the resolved review subset. CatBoost and the
+fusion/calibrator are trained only on the resulting canonical feature rows; they are not pretrained on a
+separate hidden dataset.
+
+```bash
+# On either the Mac or a GPU host
+python3 -m pip install -e 'services/api[ml,semantic]'
+
+# Download an immutable base model snapshot. A mutable branch name is rejected.
+python3 -m ml.semantic.bootstrap \
+  --repository MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli \
+  --revision 6f5cf0a2b59cabb106aca4c287eed12e357e90eb \
+  --target artifacts/base-models/english-nli
+
+# Produces grouped OOF predictions for train and held-out predictions elsewhere.
+python3 -m ml.semantic.train_multilingual \
+  --dataset ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl \
+  --base-model artifacts/base-models/english-nli \
+  --output artifacts/models/semantic-v2 \
+  --batch-size 16 \
+  --gradient-accumulation-steps 1 \
+  --gradient-checkpointing \
+  --prediction-batch-size 32
+
+# Refuses to write a partial feature dataset if any semantic prediction is missing.
+make features \
+  DATASET=ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl \
+  SEMANTIC_PREDICTIONS=artifacts/models/semantic-v2/semantic-predictions.jsonl \
+  FEATURE_DATASET=ml/data/generated/features-v2.jsonl
+
+make train-v2 FEATURE_DATASET=ml/data/generated/features-v2.jsonl
+make evaluate-v2 FEATURE_DATASET=ml/data/generated/features-v2.jsonl
+
+# Creates fusion-v2.serving.manifest.json only when the report is hash-bound and passed.
+make promote-v2
+```
+
+The result is written to `artifacts/reports/evaluation-summary.json`. Manifests bind the source dataset,
+semantic predictions, feature order, artifacts, calibration procedure, random seed, threshold, and every
+checksum. The live API loads `fusion-v2.manifest.json`, verifies the CatBoost and JSON fusion artifacts,
+and exposes the stacker/calibrator versions in every decision.
+
+Training never marks its own output as serving-approved. The explicit promotion command verifies the
+golden-gate status, dataset hash, artifact-manifest hash, and no-model-HOLD invariant. Docker looks only
+for the promoted serving manifest; without it, the API uses the documented heuristic fallback. To run the
+full artifact path in a semantic-enabled Python environment:
+
+```bash
+ACE_MODEL_MODE=artifact \
+ACE_SEMANTIC_ARTIFACT=artifacts/models/semantic-v2 \
+ACE_FUSION_MANIFEST=artifacts/models/fusion-v2.serving.manifest.json \
+uvicorn app.main:app --app-dir services/api --port 8000
+```
+
+The API checks that the active semantic version is one of the versions bound into the fusion manifest and
+returns a fail-safe service error on mismatch.
+
+For a fast pipeline smoke test that does not claim real-world validity, `make evaluate` still builds the
+small 300-row synthetic fixture. It exists to catch code regressions only and should not be promoted.
+
+### Data mixture and why it is used
+
+| Corpus | Size | Real/public portion | Synthetic portion | Purpose |
+|---|---:|---|---|---|
+| Option 1 ESCI hybrid | 60,000 | Queries, products, attributes, locales, relevance | Budgets, cart/state envelope, composites, counterfactuals | First actionable semantic + integrity model |
+| Option 1 review subset | 6,000 (within 60k) | Two LLM passes + adjudication; later human audit | Synthetic mandate envelope remains explicit | Provisional weak-label correction; not human ground truth |
+| Option 2 public benchmark | 150,000 | Amazon-M2, UCI transactions, DB1B itineraries, USAspending awards | Mandates for sources without intent plus grounded counterfactuals | Domain-transfer benchmark and pretraining |
+| Option 2 expert subset | 4,000 (within 150k) | Human judgments over public evidence | Same explicit synthetic envelope | Cross-domain golden evaluation |
+
+Option 2 is built only after its upstream files have been converted to each adapter's streaming
+`records.jsonl` contract and locked in `ml/data/raw/option2/source-lock.json`. Run `make data-option2` to
+produce the fixed 150k corpus. Adding a source changes an adapter and composition manifest, not the model's
+`features-v2` definitions.
+
+```bash
+make data-option2-uci
+make data-option2-db1b
+make data-option2-usaspending # deterministic 2015-2025 contract-award search
+
+# Amazon-M2 requires AIcrowd sign-in and acceptance of the dataset terms.
+make data-option2-amazon AMAZON_SOURCE=/path/to/unpacked/amazon-m2
+make data-option2
+```
+
+Amazon-M2 is session data, not ESCI relevance data. Its adapter uses the observed next product as a noisy
+behavioral transition (`weak_session_transition`, confidence 0.55) and synthesizes the mandate from prior
+session products. UCI, DB1B, and USAspending provide real transaction, itinerary, and award evidence but
+also require synthetic mandate envelopes. These distinctions remain visible in field-level provenance.
 
 ## Security and prototype limitations
 
@@ -355,5 +496,6 @@ similarity labels.
 - Protected characteristics are excluded from the feature set.
 
 See [the threat model](docs/threat-model.md) for the trust assumptions and covered failure modes, and
-[the demo script](docs/demo-script.md) for a presentation walkthrough. The complete product rationale and
+[the data/ML pipeline contract](docs/data-ml-pipeline.md) for source, labeling, leakage, training, and
+promotion invariants. The [demo script](docs/demo-script.md) contains a presentation walkthrough. The complete product rationale and
 selected technical architecture are documented in [prd.md](prd.md) and [architecture.md](architecture.md).

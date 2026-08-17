@@ -18,13 +18,21 @@ def bootstrap(repository: str, revision: str, target: Path) -> dict[str, str]:
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
-        raise RuntimeError("Install services/api[semantic] before bootstrapping NLI artifacts") from exc
+        raise RuntimeError(
+            "Install services/api[semantic] before bootstrapping NLI artifacts"
+        ) from exc
     target.mkdir(parents=True, exist_ok=True)
     snapshot_download(
         repo_id=repository,
         revision=revision,
         local_dir=target,
-        local_dir_use_symlinks=False,
+        allow_patterns=[
+            "*.json",
+            "*.model",
+            "model.safetensors",
+            "README.md",
+            "LICENSE*",
+        ],
     )
     manifest = {
         "repository": repository,
@@ -40,13 +48,17 @@ def bootstrap(repository: str, revision: str, target: Path) -> dict[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repository", default="cross-encoder/nli-deberta-v3-base")
+    parser.add_argument(
+        "--repository", default="MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+    )
     parser.add_argument(
         "--revision",
         required=True,
         help="Immutable Hugging Face commit hash; mutable branch names are intentionally rejected.",
     )
-    parser.add_argument("--target", type=Path, default=Path("artifacts/models/nli-deberta-v3-base"))
+    parser.add_argument(
+        "--target", type=Path, default=Path("artifacts/base-models/english-nli")
+    )
     args = parser.parse_args()
     if len(args.revision) < 20:
         raise SystemExit("--revision must be an immutable commit hash")
@@ -55,4 +67,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

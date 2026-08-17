@@ -54,9 +54,7 @@ def evaluate_rules(
     )
     from .schemas import MandateProposal
 
-    valid_signature = verify_reference(
-        mandate.authorization_reference, MandateProposal.model_validate(proposal)
-    )
+    valid_signature = verify_reference(mandate.authorization_reference, MandateProposal.model_validate(proposal))
     results.append(
         _result(
             "mandate_signature",
@@ -165,9 +163,7 @@ def evaluate_rules(
         elif constraint.type == ConstraintType.PROHIBITED_ITEM:
             terms = [str(term).lower() for term in (constraint.value or [])]
             matches = [
-                item.description
-                for item in cart.line_items
-                if any(term in item.description.lower() for term in terms)
+                item.description for item in cart.line_items if any(term in item.description.lower() for term in terms)
             ]
             results.append(
                 _result(
@@ -178,6 +174,42 @@ def evaluate_rules(
                     {"prohibited_terms": terms},
                     cart.evidence_reference,
                     "PROHIBITED_OR_UNRELATED_ITEM" if matches else None,
+                )
+            )
+        elif constraint.type == ConstraintType.PROHIBITED_CATEGORY:
+            prohibited = {
+                str(value).upper()
+                for value in (constraint.value if isinstance(constraint.value, list) else [constraint.value])
+                if value is not None
+            }
+            matched = cart.merchant_category.upper() in prohibited
+            results.append(
+                _result(
+                    f"prohibited_category:{constraint.constraint_id}",
+                    RuleStatus.FAIL if matched else RuleStatus.PASS,
+                    "high",
+                    cart.merchant_category,
+                    {"prohibited_categories": sorted(prohibited)},
+                    cart.evidence_reference,
+                    "PROHIBITED_OR_UNRELATED_ITEM" if matched else None,
+                )
+            )
+        elif constraint.type == ConstraintType.ALLOWED_MERCHANT:
+            allowed = {
+                str(value)
+                for value in (constraint.value if isinstance(constraint.value, list) else [constraint.value])
+                if value is not None
+            }
+            matched = cart.merchant_id in allowed
+            results.append(
+                _result(
+                    f"allowed_merchant:{constraint.constraint_id}",
+                    RuleStatus.PASS if matched else RuleStatus.FAIL,
+                    "high",
+                    cart.merchant_id,
+                    {"allowed_merchants": sorted(allowed)},
+                    cart.evidence_reference,
+                    None if matched else "MERCHANT_NOT_AUTHORIZED",
                 )
             )
         elif constraint.type == ConstraintType.ROUTE:
