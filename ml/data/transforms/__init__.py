@@ -3,6 +3,7 @@ from .counterfactuals import (
     cumulative_overspend,
     near_budget_match,
     remove_required_evidence,
+    validate_counterfactual_invariants,
 )
 from .splits import assign_grouped_splits, assign_split, split_for_group
 
@@ -14,4 +15,5 @@ __all__ = [
     "near_budget_match",
     "remove_required_evidence",
     "split_for_group",
+    "validate_counterfactual_invariants",
 ]

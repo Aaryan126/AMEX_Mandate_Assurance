@@ -117,7 +117,17 @@ def construct_option1(
     composites: list[AceDatasetExample] = []
     for index, parent in enumerate(composite_parents):
         extra = extras[index % len(extras)].cart.line_items[0]
-        amount = max(1, parent.cart.total_amount_minor // 10)
+        budgets = [
+            constraint.amount_minor
+            for constraint in parent.mandate.constraints
+            if constraint.type == "total_budget" and constraint.amount_minor is not None
+        ]
+        headroom = (
+            max(0, min(budgets) - parent.cart.total_amount_minor)
+            if budgets
+            else parent.cart.total_amount_minor // 10
+        )
+        amount = min(parent.cart.total_amount_minor // 10, headroom)
         child = add_unrelated_item(
             parent,
             product_id=extra.source_product_id or f"extra_{index}",

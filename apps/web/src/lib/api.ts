@@ -22,9 +22,22 @@ export type AnnotationItem = {
     };
     context: { locale: string; domain: string };
     provenance: { source_dataset: string; evidence_origin: string; transformation: string };
+    audit_context?: {
+      policy_version: string;
+      deterministic_treatment: "APPROVE" | "STEP_UP" | "HOLD";
+      review_scope: string;
+      commercial_rule_results: Array<{
+        rule_id: string;
+        status: string;
+        reason_code: string | null;
+        observed_value: unknown;
+        expected_value: unknown;
+      }>;
+    };
   };
   completed_reviews: number;
   needs_adjudication: boolean;
+  prior_reviews: AnnotationReview[];
 };
 
 export type AnnotationProgress = {

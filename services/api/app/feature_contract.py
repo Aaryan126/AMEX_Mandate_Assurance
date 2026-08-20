@@ -18,6 +18,53 @@ NUMERIC_FEATURES = [
 CATEGORICAL_FEATURES = ["domain", "merchant_category", "evidence_sufficiency"]
 FEATURE_NAMES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 
+FEATURE_PROFILES = {
+    "full-v2": FEATURE_NAMES,
+    "shortcut-safe-v2": [name for name in FEATURE_NAMES if name != "line_item_count"],
+    "no-semantic-v2": [
+        name
+        for name in FEATURE_NAMES
+        if name not in {"semantic_contradiction", "semantic_neutral"}
+    ],
+    "shortcut-safe-no-semantic-v2": [
+        name
+        for name in FEATURE_NAMES
+        if name
+        not in {"line_item_count", "semantic_contradiction", "semantic_neutral"}
+    ],
+}
+FULL_STACK_FEATURES = [
+    "semantic_contradiction",
+    "semantic_neutral",
+    "catboost_probability",
+    "hard_fail_count",
+    "soft_warning_count",
+]
+
+
+def feature_names_for_profile(profile: str) -> list[str]:
+    try:
+        return list(FEATURE_PROFILES[profile])
+    except KeyError as exc:
+        raise ValueError(f"unknown feature profile: {profile}") from exc
+
+
+def feature_profile_for_names(names: list[str]) -> str:
+    matches = [profile for profile, values in FEATURE_PROFILES.items() if names == values]
+    if len(matches) != 1:
+        raise ValueError("model feature names do not match a declared feature profile")
+    return matches[0]
+
+
+def stack_feature_names_for_profile(profile: str) -> list[str]:
+    selected = feature_names_for_profile(profile)
+    return [
+        name
+        for name in FULL_STACK_FEATURES
+        if name not in {"semantic_contradiction", "semantic_neutral"}
+        or name in selected
+    ]
+
 
 def feature_values(
     *,

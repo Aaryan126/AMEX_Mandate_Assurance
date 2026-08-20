@@ -3,17 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .schemas import RuleResult, RuleStatus, SemanticResult, Treatment
-
-CRITICAL_HOLD_CODES = {
-    "MANDATE_AUTHORIZATION_INVALID",
-    "MANDATE_NOT_ACTIVE",
-    "MANDATE_EXPIRED_OR_NOT_YET_VALID",
-    "CART_REPLAY_DETECTED",
-    "CUMULATIVE_BUDGET_EXCEEDED",
-    "FULFILLMENT_LIMIT_EXCEEDED",
-    "PROHIBITED_OR_UNRELATED_ITEM",
-    "MERCHANT_NOT_AUTHORIZED",
-}
+from .treatment_contract import treatment_for_signals
 
 
 @dataclass(frozen=True)
@@ -35,8 +25,6 @@ def apply_policy(
     reason_codes.extend("REQUIRED_ATTRIBUTE_EVIDENCE_MISSING" for result in semantics if result.neutral >= 0.6)
     reason_codes = list(dict.fromkeys(reason_codes))
 
-    if any(code in CRITICAL_HOLD_CODES for code in reason_codes):
-        return PolicyDecision(Treatment.HOLD, 0.99, "high", reason_codes)
     not_evaluable = any(result.status == RuleStatus.NOT_EVALUABLE for result in rules)
     commercial_failure = any(result.status == RuleStatus.FAIL for result in rules)
     semantic_contradiction = any(result.contradiction >= 0.8 for result in semantics)
@@ -46,9 +34,17 @@ def apply_policy(
         and structured_probability is not None
         and structured_probability >= model_step_up_threshold
     )
+    treatment = treatment_for_signals(
+        reason_codes,
+        has_unclassified_failure=commercial_failure or semantic_contradiction,
+        has_not_evaluable=not_evaluable or semantic_uncertainty,
+        model_escalation=model_escalation,
+    )
+    if treatment == Treatment.HOLD:
+        return PolicyDecision(Treatment.HOLD, 0.99, "high", reason_codes)
     if model_escalation:
         reason_codes.append("MODEL_RISK_THRESHOLD_EXCEEDED")
-    if not_evaluable or commercial_failure or semantic_contradiction or semantic_uncertainty or model_escalation:
+    if treatment == Treatment.STEP_UP:
         probability = max(structured_probability or 0.55, 0.55)
         return PolicyDecision(Treatment.STEP_UP, probability, "moderate", reason_codes)
 

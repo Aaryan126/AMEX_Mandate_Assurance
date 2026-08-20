@@ -18,6 +18,18 @@ def test_balanced_quality_gate_metrics() -> None:
     }
 
 
+def test_step_up_is_a_caught_violation_not_a_decline() -> None:
+    metrics = treatment_metrics(
+        ["APPROVE", "STEP_UP", "HOLD"],
+        ["APPROVE", "STEP_UP", "STEP_UP"],
+    )
+    assert metrics == {
+        "violation_recall": 1.0,
+        "false_step_up_rate": 0.0,
+        "false_decline_rate": 0.0,
+    }
+
+
 def test_calibration_error() -> None:
     assert expected_calibration_error([0, 1], [0.0, 1.0]) == pytest.approx(0.0)
 

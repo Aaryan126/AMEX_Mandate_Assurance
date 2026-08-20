@@ -78,14 +78,13 @@ flowchart TD
         NLI[Semantic NLI scorer]
         FEATURES[Stateful feature computation]
         CAT[CatBoost risk model]
-        FUSION[Stacking and calibration]
+        CAL[Probability calibration]
         POLICY[Versioned policy]
         RULES --> POLICY
         NLI --> FEATURES
         FEATURES --> CAT
-        NLI --> FUSION
-        CAT --> FUSION
-        FUSION --> POLICY
+        CAT --> CAL
+        CAL --> POLICY
     end
 
     DECISION --> RULES
@@ -128,8 +127,11 @@ contract version. It then evaluates three complementary branches:
 | Semantic inference | Whether trusted evidence entails, contradicts, or fails to establish a required attribute | Deterministic offline scorer plus an artifact-only DeBERTa NLI adapter |
 | Structured risk | Interactions between amounts, state utilization, missing evidence, semantic scores, categories, and rule results | CatBoost binary classifier |
 
-CatBoost and semantic outputs can be combined through a logistic stacker and held-out calibrator. Models
-produce evidence and probabilities; a deterministic, versioned policy always owns the final treatment.
+The current development architecture supplies semantic probabilities as CatBoost input features and then
+calibrates CatBoost with a separately fitted Platt calibrator. The earlier logistic stacker reduced quality
+and is not the selected path. Fusion remains a research option only if it adds an independently trained,
+leakage-safe signal and passes non-degradation gates. Models produce evidence and probabilities; a
+deterministic, versioned policy always owns the final treatment.
 
 The default policy behaves as follows:
 
@@ -184,17 +186,20 @@ an uncalibrated score as calibrated.
   150,000-row builder using 70% public-record-backed examples and 30% grounded counterfactuals.
 - A local two-reviewer annotation service and `/annotate` UI. Label provenance distinguishes human,
   LLM-consensus, mixed, and adjudicated outcomes; review data lives in its own SQLite database.
-- Grouped 70/10/10/10 train, validation, calibration, and frozen golden splits. Parents, children, query
-  groups, invoices, and sequences cannot cross splits.
+- A relationship-isolated 7,000-row development-v3 selection with 4,000 `train_fit`, 1,000 `calibration`,
+  1,000 `policy_tuning`, and 1,000 `candidate_selection` rows. Parents, children, source records, query
+  groups, invoices, and sequences cannot cross roles.
 - English three-way NLI fine-tuning with grouped out-of-fold predictions for training rows and a
-  temperature chosen only on the calibration split.
-- CatBoost, five-fold out-of-fold logistic stacking, held-out Platt calibration, and a validation-selected
-  `STEP_UP` threshold. Fusion artifacts are JSON plus checksum-verified CatBoost, not executable pickle.
-- One `features-v2` computation contract imported by both offline training and the live API, with a parity
-  test that fails if the vectors diverge.
+  temperature chosen only on the calibration split. The latest v3 run freezes this artifact and performs
+  inference only.
+- CatBoost fitted only on `train_fit`, separate Platt calibration, and a policy threshold selected only on
+  `policy_tuning`. The selected calibrated CatBoost is a development candidate, not a serving artifact.
+- One shared commercial-rule core consumed by offline features and the live API, with parity and boundary
+  tests that fail if comparable rule results diverge.
 - Golden evaluation that uses only observable evidence. `attack_family` is retained solely for grouped
   reporting and cannot influence a prediction.
-- TabM inclusion gate requiring measurable lift, acceptable calibration, and p95 latency below two seconds.
+- Optional fusion and challenger gates requiring measurable lift, leakage-safe construction, acceptable
+  calibration, and acceptable latency.
 
 ## Demo scenarios
 
@@ -357,8 +362,8 @@ reviews. Disagreements enter the adjudication queue. The service is disabled by 
 database is separate from the transaction-serving database.
 
 For a scalable provisional pass, prepare two independent OpenAI Batch API jobs. Reviewer A uses the pinned
-`gpt-5.4-2026-03-05` snapshot; reviewer B and disagreement adjudication use the pinned
-`gpt-5.5-2026-04-23` snapshot. Both use strict JSON schemas. LLM labels are explicitly stored as
+`gpt-5.4-mini-2026-03-17` snapshot, reviewer B uses `gpt-4.1-mini-2025-04-14`, and only disagreements go to
+the full `gpt-5.4-2026-03-05` adjudicator. Both passes use strict JSON schemas. LLM labels are stored as
 `llm_consensus` or `llm_adjudicated`, never as expert human labels.
 
 ```bash
@@ -376,6 +381,46 @@ then `prepare-adjudication` for disagreements. Before any production claim, manu
 sample and have a human resolve every audited mismatch. LLM consensus is useful training supervision but
 is not a substitute for a human-owned golden set.
 
+### Required genuine human audit
+
+The remediation pipeline prepares a deterministic, stratified 400-row audit across development and the
+consumed replacement holdout. It balances source-label provenance, counterfactual families, and real
+versus hybrid-grounded evidence. The reviewer queue hides all original labels, attack/transformation
+metadata, parent identity, and model predictions; a private checksum-bound ledger preserves them for the
+final agreement report. Deterministic arithmetic checks are shown so people can focus on semantic fit.
+
+```bash
+make human-audit-prepare
+make human-audit-validate
+
+# Terminal 1: local-only review API
+make human-audit-api
+
+# Terminal 2: reviewer UI
+npm --prefix apps/web run dev
+```
+
+Open <http://localhost:3000/annotate>. Two different people must each review all 400 rows using stable IDs
+that start with `human-`. They should work independently. A third human then enables **Adjudication queue**
+and resolves only disagreements. The complete label definitions and boundary cases are in
+[`docs/human-audit-reviewer-guide.md`](docs/human-audit-reviewer-guide.md).
+
+```bash
+make human-audit-status
+make human-audit-report
+```
+
+The report command refuses incomplete queues, non-human reviewer IDs, rows without exactly two independent
+reviews, unresolved disagreements, and any deterministic-treatment mismatch. No OpenAI API is used for
+this audit. Generated queues, the private ledger, and review SQLite database remain gitignored.
+
+This genuine human audit has **not** been completed. To keep provisional model development moving, the
+same 400-row blinded queue was instead processed by pinned GPT-5.4 mini and GPT-4.1 mini reviewers. They
+agreed on 194 rows, and pinned GPT-5.4 adjudicated all 206 disagreements. The measured Batch API cost was
+approximately US$2.62. The result is explicitly recorded as `llm_assisted_not_human`; it contains zero
+genuine human-reviewed rows and is not eligible to support a production or promotion claim. Only 81 of
+these audited labels entered development-v3 after relationship and consumed-holdout exclusions.
+
 After review is complete, freeze labels into a new immutable JSONL rather than mutating the source corpus:
 
 ```bash
@@ -385,7 +430,9 @@ make export-reviews \
   OUTPUT=ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl
 ```
 
-## Train the hybrid model pipeline
+## Train and reproduce the model research pipelines
+
+### Frozen semantic model and v2 workflow
 
 The 24 GB M4 Pro can run the English NLI fine-tune through PyTorch MPS with dynamic padding and activation
 checkpointing. A local throughput benchmark found batch size 16 stable at roughly 6.97 examples/second and
@@ -394,9 +441,11 @@ memory is not the bottleneck. A CUDA host remains the faster fallback, not a pre
 
 The selected English base is `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` at commit
 `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`. It starts from real MNLI, FEVER-NLI, and ANLI data,
-then is fine-tuned only on English public-evidence hybrid rows and the resolved review subset. CatBoost and the
-fusion/calibrator are trained only on the resulting canonical feature rows; they are not pretrained on a
-separate hidden dataset.
+was domain-adapted on an approximately 10,000-row Option 2 public-data hybrid sample, and was then
+fine-tuned and validated with grouped folds on the reviewed English Option 1 fast-track corpus. In the
+latest development-v3 run this semantic artifact was frozen and used only for inference. CatBoost and its
+calibrator are trained only on resulting canonical Option 1 feature rows; there is no separate hidden
+training dataset.
 
 ```bash
 # On either the Mac or a GPU host
@@ -431,10 +480,107 @@ make evaluate-v2 FEATURE_DATASET=ml/data/generated/features-v2.jsonl
 make promote-v2
 ```
 
-The result is written to `artifacts/reports/evaluation-summary.json`. Manifests bind the source dataset,
-semantic predictions, feature order, artifacts, calibration procedure, random seed, threshold, and every
-checksum. The live API loads `fusion-v2.manifest.json`, verifies the CatBoost and JSON fusion artifacts,
-and exposes the stacker/calibrator versions in every decision.
+The fast-track workflow runs the same semantic trainer through explicit restart boundaries. After the
+Option 2 domain-adapted base checkpoint exists, `make semantic-fast-track-prepare` writes a
+`training-state.json` that binds the reviewed dataset, immutable base-model tree, hyperparameters,
+grouped fold assignment, and expected holdout keys. Each approved fold is then run separately:
+
+```bash
+make semantic-fast-track-fold FOLD=0
+make semantic-fast-track-fold FOLD=1
+# Continue through FOLD=4 only at the corresponding approval gates.
+make semantic-fast-track-finalize
+make semantic-fast-track-complete-predictions
+make features-fast-track
+make train-fast-track-v2
+# Run only once after the experiment is frozen; this does not promote the model.
+make evaluate-fast-track-v2
+```
+
+The completion pass does not train the model again. It uses the checksum-bound final model and calibrated
+temperature to score semantic constraints that intentionally have no supervised label, then atomically merges
+those inference-only rows with the cross-fit and held-out predictions. `features-fast-track` consumes that
+complete artifact, so unreviewed rows keep `label=null` and cannot enter supervised fitting, while every cart
+still receives semantic inputs under the same `features-v2` contract used by the live API.
+
+A fold writes its holdout logits to an atomic, checksum-bound JSONL checkpoint before being marked
+complete. Re-running a completed fold verifies and skips it. A failed or interrupted fold retains its
+attempt state and can be retried, while any dataset, base model, configuration, fold-assignment, or
+checkpoint change is rejected. Final training refuses to start until every grouped fold checkpoint is
+complete.
+
+The fast-track evaluator writes
+`artifacts/reports/fast-track-v2-golden-evaluation.json`. It checks every dataset/model binding before
+opening the golden split and compares rules only, semantic only, CatBoost, the uncalibrated core stack,
+and the full calibrated policy. It also reports fixed-false-positive recall, policy-level treatment
+rates, attack/cohort slices, latency, and line-item-count sensitivity. Missing trained challengers are
+reported as not run; evaluation never silently trains them or substitutes an invalid inference-time
+feature-zeroing experiment. A failed report cannot create a serving manifest.
+
+After a failed gate, `make diagnose-fast-track-remediation` scores only train/validation/calibration
+data and leaves the golden split out of tuning. The remediation candidates are declared explicitly:
+`train-fast-track-v3-no-semantic` removes both semantic inputs and `line_item_count`, while
+`train-fast-track-v3-semantic` retains semantic inputs but removes `line_item_count`. Both use the
+reviewed policy-intervention target, including ambiguous rows labeled STEP_UP, and select their
+threshold against the complete policy so rule and semantic overrides consume the same false-step-up
+budget. These targets start local training and therefore remain separate approval-gated steps.
+
+Because the original golden split was opened during the failed evaluation, it is now a regression set,
+not an unbiased promotion set. The replacement holdout is drawn deterministically from previously unused
+Option 1 training groups, excludes every prior example, group, parent, and source record, strips all source
+labels, and changes the split to `golden`. Its reviewer prompts expose the mandate, cart, and evidence
+origin only; transformation names and field-origin metadata are withheld so reviewers cannot infer the
+generator's intended class.
+
+The local, non-billable preparation can be reproduced and checked with:
+
+```bash
+make replacement-holdout-freeze
+make replacement-holdout-prepare-reviews
+make replacement-holdout-validate-reviews
+```
+
+The frozen data lives at
+`ml/data/generated/fast-track/replacement-holdout/replacement-holdout.blinded.jsonl`; its review queue and
+eight request shards live under `ml/data/annotations/replacement-holdout/`. Re-running the freeze verifies
+the existing checksums and skips it; a partial or different lock is rejected. The two commands below create
+billable OpenAI Batch jobs and must be run only after an explicit approval checkpoint:
+
+```bash
+make replacement-holdout-submit-a
+make replacement-holdout-submit-b
+```
+
+Reviewer A uses the pinned `gpt-5.4-mini-2026-03-17` snapshot and reviewer B uses
+`gpt-4.1-mini-2025-04-14`. Disagreements are adjudicated later by pinned GPT-5.4 in a separate approval
+step. No remediation candidate may train against this replacement holdout, and the holdout is opened only
+once for the final promotion evaluation.
+
+Downloaded reviewer outputs must pass exact ID coverage, completed-response, strict-schema, and checksum
+validation before import. If an otherwise successful Batch contains an internally incomplete response,
+the pipeline stops before creating the review database. The recovery path prepares only the invalid rows
+with a larger output-token ceiling; submitting that retry remains a separate billable approval gate:
+
+```bash
+make replacement-holdout-prepare-review-retry       # local and non-billable
+make replacement-holdout-submit-review-retry        # billable; explicit approval required
+make replacement-holdout-review-retry-status
+make replacement-holdout-review-retry-download
+make replacement-holdout-validate-review-retry-output
+make replacement-holdout-merge-review-retry
+make replacement-holdout-validate-merged-outputs
+make replacement-holdout-import-merged
+```
+
+The merge writes a separate `validated-outputs/` directory and does not modify the originally downloaded
+Batch files. It verifies that retry requests differ only by their increased token limit, replaces exactly
+the retried IDs, and revalidates all 8,000 reviewer outputs before atomic import.
+
+The existing v2 evaluator writes `artifacts/reports/evaluation-summary.json`. Manifests bind the source
+dataset, semantic predictions, feature order, artifacts, calibration procedure, random seed, threshold,
+and every checksum. The v2 artifact loader can load `fusion-v2.manifest.json`, verify the CatBoost and JSON
+fusion artifacts, and expose the stacker/calibrator versions in every decision. This compatibility path is
+not evidence that the latest v3 candidate has been promoted.
 
 Training never marks its own output as serving-approved. The explicit promotion command verifies the
 golden-gate status, dataset hash, artifact-manifest hash, and no-model-HOLD invariant. Docker looks only
@@ -451,17 +597,50 @@ uvicorn app.main:app --app-dir services/api --port 8000
 The API checks that the active semantic version is one of the versions bound into the fusion manifest and
 returns a fail-safe service error on mismatch.
 
+### Current development-v3 result
+
+The v3 remediation run rebuilt Option 1 with `grounded-counterfactual-v3`, selected 7,000
+relationship-isolated rows, and reused the completed English semantic model as a frozen feature generator.
+It trained CatBoost only on `train_fit`, fitted Platt calibration only on `calibration`, selected the
+`STEP_UP` threshold only on `policy_tuning`, and reported architecture metrics only on
+`candidate_selection`.
+
+On the 1,000-row candidate-selection role, calibrated CatBoost produced:
+
+| Metric | Result | Gate |
+|---|---:|---:|
+| PR-AUC | 0.96668 | Diagnostic ranking metric |
+| Brier score | 0.08719 | Lower is better |
+| Expected calibration error | 0.02523 | At most 0.08; passed |
+| Operational recall | 79.93% | At least 90%; failed |
+| False-step-up rate | 9.03% | At most 10%; passed |
+| False-decline rate | 0% | At most 2%; passed |
+| Adequately supported untransformed-family recall | 41.46% | At least 80%; failed |
+
+The candidate is therefore `LOCKED_NON_PROMOTABLE`. Steps that would freeze, review, or open another final
+holdout were intentionally not run. The 0.96668 development PR-AUC is not directly comparable with the
+earlier 0.5292 result on the consumed replacement holdout because the datasets, label policy, and evaluation
+roles differ. It demonstrates that the model learns the v3 development target; it does not demonstrate
+production generalization.
+
 For a fast pipeline smoke test that does not claim real-world validity, `make evaluate` still builds the
 small 300-row synthetic fixture. It exists to catch code regressions only and should not be promoted.
 
-### Data mixture and why it is used
+### Data mixture, provenance, and status
 
-| Corpus | Size | Real/public portion | Synthetic portion | Purpose |
+| Corpus | Size | Real/public evidence | Synthetic portion | Status and purpose |
 |---|---:|---|---|---|
-| Option 1 ESCI hybrid | 60,000 | Queries, products, attributes, locales, relevance | Budgets, cart/state envelope, composites, counterfactuals | First actionable semantic + integrity model |
-| Option 1 review subset | 6,000 (within 60k) | Two LLM passes + adjudication; later human audit | Synthetic mandate envelope remains explicit | Provisional weak-label correction; not human ground truth |
-| Option 2 public benchmark | 150,000 | Amazon-M2, UCI transactions, DB1B itineraries, USAspending awards | Mandates for sources without intent plus grounded counterfactuals | Domain-transfer benchmark and pretraining |
-| Option 2 expert subset | 4,000 (within 150k) | Human judgments over public evidence | Same explicit synthetic envelope | Cross-domain golden evaluation |
+| Option 1 ESCI hybrid | 60,000 | Queries, products, attributes, locales, relevance | Budgets, cart/state envelope, composites, counterfactuals | Built; primary English source pool |
+| Development v3 | 7,000 | 3,872 `real_public` rows; all rows inherit public ESCI evidence | Synthetic operational envelope on every row; 3,128 explicitly `hybrid_grounded` rows | Built; CatBoost development only |
+| V3 assisted audit | 400 | Blinded public-evidence examples | Synthetic operational envelope remains explicit | Completed by LLM reviewers; not human validation; 81 labels selected into development v3 |
+| Option 1 review queue | 6,000 (within 60k) | Public ESCI evidence | Synthetic mandate envelope remains explicit | Provisional review pool; not human ground truth |
+| Option 2 public benchmark | 150,000 | Amazon-M2, UCI transactions, DB1B itineraries, USAspending awards | Mandates for sources without intent plus grounded counterfactuals | Built for domain transfer, benchmark work, and semantic pretraining |
+| Option 2 expert subset | 4,000 (planned within 150k) | Planned human judgments over public evidence | Same explicit synthetic envelope | Not completed; future cross-domain golden evaluation |
+
+Within development v3, label provenance is 3,856 weak policy-v3 rows (55.09%), 3,063 deterministic
+policy-v3 rows (43.76%), and 81 LLM-assisted rows (1.16%). The `real_public` classification does not mean a
+real Amex financial transaction: ESCI supplies real public query/product evidence, while mandate, budget,
+cart-state, and treatment fields remain synthetic. No real Amex Card Member or transaction data is used.
 
 Option 2 is built only after its upstream files have been converted to each adapter's streaming
 `records.jsonl` contract and locked in `ml/data/raw/option2/source-lock.json`. Run `make data-option2` to

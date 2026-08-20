@@ -67,7 +67,7 @@ def test_model_detected_semantic_contradiction_steps_up() -> None:
 def test_injected_add_on_holds() -> None:
     decision, _ = treatment_for(cart(extra_item="Unrelated gift card subscription"))
     assert decision.treatment == Treatment.HOLD
-    assert "PROHIBITED_OR_UNRELATED_ITEM" in decision.reason_codes
+    assert "EXPLICIT_PROHIBITED_ITEM_OR_CATEGORY" in decision.reason_codes
 
 
 def test_stateful_cumulative_breach_holds() -> None:

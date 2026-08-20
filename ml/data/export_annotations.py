@@ -4,7 +4,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +96,7 @@ def export(
 ) -> dict[str, Any]:
     reviews = resolved_reviews(database_path)
     counts = {"rows": 0, "resolved_reviews": 0, "unresolved_reviews": 0}
+    label_sources: Counter[str] = Counter()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with dataset_path.open() as source, output_path.open("w") as output:
         for line in source:
@@ -120,14 +121,20 @@ def export(
                         reviewer_confidence=confidence,
                     )
                     counts["resolved_reviews"] += 1
+            label_sources[example.labels.label_source] += 1
             output.write(example.model_dump_json() + "\n")
             counts["rows"] += 1
     manifest = {
         **counts,
+        "row_count": counts["rows"],
+        "label_sources": dict(sorted(label_sources.items())),
+        "source_dataset": str(dataset_path),
         "source_dataset_sha256": hashlib.sha256(dataset_path.read_bytes()).hexdigest(),
+        "review_database": str(database_path),
         "review_database_sha256": hashlib.sha256(
             database_path.read_bytes()
         ).hexdigest(),
+        "dataset_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
         "output_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
     }
     output_path.with_suffix(".manifest.json").write_text(

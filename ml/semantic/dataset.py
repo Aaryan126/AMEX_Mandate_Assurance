@@ -25,7 +25,8 @@ class NliTrainingRow:
     label: int
 
 
-def nli_rows(example: AceDatasetExample) -> list[NliTrainingRow]:
+def nli_inference_rows(example: AceDatasetExample) -> list[NliTrainingRow]:
+    """Build every semantic pair, using -1 only when no supervised label exists."""
     annotations = {
         value.constraint_id: value.label for value in example.labels.semantic
     }
@@ -35,7 +36,7 @@ def nli_rows(example: AceDatasetExample) -> list[NliTrainingRow]:
     output: list[NliTrainingRow] = []
     for constraint in example.mandate.constraints:
         label = annotations.get(constraint.constraint_id)
-        if constraint.type != "semantic_attribute" or label is None:
+        if constraint.type != "semantic_attribute":
             continue
         output.append(
             NliTrainingRow(
@@ -45,10 +46,15 @@ def nli_rows(example: AceDatasetExample) -> list[NliTrainingRow]:
                 split=example.split.name,
                 premise=evidence,
                 hypothesis=f"The proposed purchase satisfies this requirement: {constraint.value}.",
-                label=LABEL_IDS[label],
+                label=LABEL_IDS[label] if label is not None else -1,
             )
         )
     return output
+
+
+def nli_rows(example: AceDatasetExample) -> list[NliTrainingRow]:
+    """Return only rows that are eligible for supervised training/evaluation."""
+    return [row for row in nli_inference_rows(example) if row.label >= 0]
 
 
 def load_nli_rows(path: Path) -> list[NliTrainingRow]:
@@ -57,6 +63,17 @@ def load_nli_rows(path: Path) -> list[NliTrainingRow]:
         for line in source:
             if line.strip():
                 rows.extend(nli_rows(AceDatasetExample.model_validate_json(line)))
+    return rows
+
+
+def load_nli_inference_rows(path: Path) -> list[NliTrainingRow]:
+    rows: list[NliTrainingRow] = []
+    with path.open() as source:
+        for line in source:
+            if line.strip():
+                rows.extend(
+                    nli_inference_rows(AceDatasetExample.model_validate_json(line))
+                )
     return rows
 
 

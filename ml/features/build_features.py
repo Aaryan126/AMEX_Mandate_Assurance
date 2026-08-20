@@ -13,6 +13,27 @@ from ml.features.canonical import canonical_feature_row, load_semantic_predictio
 
 def build(dataset_path: Path, predictions_path: Path, output_path: Path) -> dict:
     predictions = load_semantic_predictions(predictions_path)
+    dataset_sha256 = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
+    predictions_sha256 = hashlib.sha256(predictions_path.read_bytes()).hexdigest()
+    predictions_manifest_path = predictions_path.with_suffix(".manifest.json")
+    predictions_binding = {}
+    if predictions_manifest_path.is_file():
+        predictions_manifest = json.loads(predictions_manifest_path.read_text())
+        if predictions_manifest.get("dataset_sha256") != dataset_sha256:
+            raise ValueError("semantic predictions are not bound to this dataset")
+        if predictions_manifest.get("predictions_sha256") != predictions_sha256:
+            raise ValueError("semantic predictions do not match their manifest")
+        predictions_binding = {
+            "semantic_predictions_manifest_sha256": hashlib.sha256(
+                predictions_manifest_path.read_bytes()
+            ).hexdigest(),
+            "semantic_model_tree_sha256": predictions_manifest.get(
+                "model_tree_sha256"
+            ),
+            "semantic_training_manifest_sha256": predictions_manifest.get(
+                "semantic_manifest_sha256"
+            ),
+        }
     semantic_model_versions: set[str] = set()
     with predictions_path.open() as source:
         for line in source:
@@ -49,11 +70,10 @@ def build(dataset_path: Path, predictions_path: Path, output_path: Path) -> dict
         **counts,
         "feature_version": FEATURE_VERSION,
         "feature_names": FEATURE_NAMES,
-        "dataset_sha256": hashlib.sha256(dataset_path.read_bytes()).hexdigest(),
-        "semantic_predictions_sha256": hashlib.sha256(
-            predictions_path.read_bytes()
-        ).hexdigest(),
+        "dataset_sha256": dataset_sha256,
+        "semantic_predictions_sha256": predictions_sha256,
         "semantic_model_versions": sorted(semantic_model_versions) or ["unknown"],
+        **predictions_binding,
         "features_sha256": hashlib.sha256(output_path.read_bytes()).hexdigest(),
     }
     output_path.with_suffix(".manifest.json").write_text(

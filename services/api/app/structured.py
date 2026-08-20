@@ -8,7 +8,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
-from .feature_contract import FEATURE_NAMES, FEATURE_VERSION, feature_values
+from .feature_contract import (
+    FEATURE_VERSION,
+    feature_profile_for_names,
+    feature_values,
+    stack_feature_names_for_profile,
+)
 from .schemas import CartEvidence, Mandate, MandateState, RuleResult, RuleStatus, SemanticResult
 
 
@@ -109,7 +114,11 @@ class CatBoostArtifactScorer:
         from catboost import CatBoostClassifier
 
         manifest = json.loads(manifest_path.read_text())
-        if manifest["feature_names"] != FEATURE_NAMES or manifest["feature_version"] != FEATURE_VERSION:
+        feature_names = [str(value) for value in manifest["feature_names"]]
+        feature_profile = feature_profile_for_names(feature_names)
+        if manifest.get("feature_profile", feature_profile) != feature_profile:
+            raise RuntimeError("CatBoost artifact feature profile is inconsistent")
+        if manifest["feature_version"] != FEATURE_VERSION:
             raise RuntimeError("CatBoost artifact feature schema is incompatible with this API build")
         checksum = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
         if checksum != manifest["artifact_sha256"]:
@@ -118,6 +127,8 @@ class CatBoostArtifactScorer:
         self.model.load_model(artifact_path)
         self.version = str(manifest["model_version"])
         self.catboost_version = self.version
+        self.feature_names = feature_names
+        self.feature_profile = feature_profile
 
     def score(
         self,
@@ -128,7 +139,7 @@ class CatBoostArtifactScorer:
         semantics: list[SemanticResult],
     ) -> float:
         features = runtime_features(mandate, state, cart, rules, semantics)
-        vector = [[features[name] for name in FEATURE_NAMES]]
+        vector = [[features[name] for name in self.feature_names]]
         return float(self.model.predict_proba(vector)[0][1])
 
 
@@ -144,7 +155,11 @@ class FusionArtifactScorer(CatBoostArtifactScorer):
         manifest = json.loads(manifest_path.read_text())
         if not manifest.get("serving_approved"):
             raise RuntimeError("fusion artifact has not passed the explicit promotion gate")
-        if manifest["feature_names"] != FEATURE_NAMES or manifest["feature_version"] != FEATURE_VERSION:
+        feature_names = [str(value) for value in manifest["feature_names"]]
+        feature_profile = feature_profile_for_names(feature_names)
+        if manifest.get("feature_profile", feature_profile) != feature_profile:
+            raise RuntimeError("Fusion artifact feature profile is inconsistent")
+        if manifest["feature_version"] != FEATURE_VERSION:
             raise RuntimeError("Fusion artifact feature schema is incompatible with this API build")
         base_path = artifact_dir / manifest["base_artifact"]
         fusion_path = artifact_dir / manifest["fusion_artifact"]
@@ -163,6 +178,11 @@ class FusionArtifactScorer(CatBoostArtifactScorer):
         self.calibrator_version = str(manifest["calibrator_version"])
         self.step_up_threshold = float(manifest["model_step_up_threshold"])
         self.semantic_model_versions = [str(value) for value in manifest["semantic_model_versions"]]
+        self.feature_names = feature_names
+        self.feature_profile = feature_profile
+        self.stack_features = [str(value) for value in manifest["stack_features"]]
+        if self.stack_features != stack_feature_names_for_profile(feature_profile):
+            raise RuntimeError("Fusion artifact stack feature profile is incompatible")
         if manifest.get("model_hold_enabled"):
             raise RuntimeError("model-only HOLD is prohibited until a pilot-approved policy enables it")
 
@@ -175,15 +195,10 @@ class FusionArtifactScorer(CatBoostArtifactScorer):
         semantics: list[SemanticResult],
     ) -> float:
         features = runtime_features(mandate, state, cart, rules, semantics)
-        vector = [[features[name] for name in FEATURE_NAMES]]
+        vector = [[features[name] for name in self.feature_names]]
         catboost_probability = float(self.model.predict_proba(vector)[0][1])
-        stack_values = [
-            float(features["semantic_contradiction"]),
-            float(features["semantic_neutral"]),
-            catboost_probability,
-            float(features["hard_fail_count"]),
-            float(features["soft_warning_count"]),
-        ]
+        stack_source = {**features, "catboost_probability": catboost_probability}
+        stack_values = [float(stack_source[name]) for name in self.stack_features]
         stacked = _logistic_probability(self.bundle["stacker"], stack_values)
         return _logistic_probability(self.bundle["calibrator"], [stacked])
 

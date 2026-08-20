@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any
 
 
 def expected_calibration_error(
@@ -28,10 +29,10 @@ def expected_calibration_error(
 def treatment_metrics(expected: Iterable[str], predicted: Iterable[str]) -> dict[str, float]:
     pairs = list(zip(expected, predicted, strict=True))
     valid = [pair for pair in pairs if pair[0] == "APPROVE"]
-    violations = [pair for pair in pairs if pair[0] == "HOLD"]
+    violations = [pair for pair in pairs if pair[0] != "APPROVE"]
     false_step_up = sum(actual == "APPROVE" and result == "STEP_UP" for actual, result in pairs)
     false_decline = sum(actual == "APPROVE" and result == "HOLD" for actual, result in pairs)
-    recalled = sum(actual == "HOLD" and result == "HOLD" for actual, result in pairs)
+    recalled = sum(actual != "APPROVE" and result != "APPROVE" for actual, result in pairs)
     return {
         "violation_recall": recalled / len(violations) if violations else 0.0,
         "false_step_up_rate": false_step_up / len(valid) if valid else 0.0,
@@ -39,14 +40,50 @@ def treatment_metrics(expected: Iterable[str], predicted: Iterable[str]) -> dict
     }
 
 
-def by_attack_family(rows: list[dict], predicted: list[str]) -> dict[str, dict[str, float]]:
+def by_attack_family(
+    rows: list[dict[str, Any]], predicted: list[str]
+) -> dict[str, dict[str, float | int]]:
     groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for row, treatment in zip(rows, predicted, strict=True):
         groups[row["attack_family"]].append((row["expected_treatment"], treatment))
     return {
         family: {
-            "count": float(len(pairs)),
-            "treatment_accuracy": sum(expected == actual for expected, actual in pairs) / len(pairs),
+            "count": len(pairs),
+            "violation_rows": sum(expected != "APPROVE" for expected, _ in pairs),
+            "legitimate_rows": sum(expected == "APPROVE" for expected, _ in pairs),
+            "treatment_accuracy": sum(
+                expected == actual for expected, actual in pairs
+            )
+            / len(pairs),
+            **treatment_metrics(
+                [expected for expected, _ in pairs],
+                [actual for _, actual in pairs],
+            ),
         }
         for family, pairs in sorted(groups.items())
+    }
+
+
+def by_cohort(
+    rows: list[dict[str, Any]],
+    predicted: list[str],
+    key: Callable[[dict[str, Any]], str],
+) -> dict[str, dict[str, float | int]]:
+    """Return policy metrics for a declared observable or evaluation-only cohort."""
+    groups: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for row, treatment in zip(rows, predicted, strict=True):
+        groups[key(row)].append((str(row["expected_treatment"]), treatment))
+    return {
+        name: {
+            "count": len(pairs),
+            "violation_rows": sum(expected != "APPROVE" for expected, _ in pairs),
+            "legitimate_rows": sum(expected == "APPROVE" for expected, _ in pairs),
+            "treatment_accuracy": sum(expected == actual for expected, actual in pairs)
+            / len(pairs),
+            **treatment_metrics(
+                [expected for expected, _ in pairs],
+                [actual for _, actual in pairs],
+            ),
+        }
+        for name, pairs in sorted(groups.items())
     }

@@ -14,6 +14,7 @@ export function AnnotationWorkspace() {
   const [deviation, setDeviation] = useState<AnnotationReview["deviation"]>("MATCH");
   const [treatment, setTreatment] = useState<AnnotationReview["expected_treatment"]>("APPROVE");
   const [semanticLabel, setSemanticLabel] = useState<AnnotationReview["semantic_label"]>("ENTAILMENT");
+  const [violationTypes, setViolationTypes] = useState("");
   const [confidence, setConfidence] = useState(0.8);
   const [notes, setNotes] = useState("");
   const [adjudicationMode, setAdjudicationMode] = useState(false);
@@ -44,6 +45,7 @@ export function AnnotationWorkspace() {
       setDeviation("MATCH");
       setTreatment("APPROVE");
       setSemanticLabel("ENTAILMENT");
+      setViolationTypes("");
       setConfidence(0.8);
       setNotes("");
     } catch (reason) {
@@ -63,7 +65,7 @@ export function AnnotationWorkspace() {
         deviation,
         semantic_label: semanticLabel,
         expected_treatment: treatment,
-        violation_types: deviation === "VIOLATION" ? ["semantic_mismatch"] : [],
+        violation_types: violationTypes.split(",").map((value) => value.trim()).filter(Boolean),
         confidence,
         notes,
       };
@@ -145,11 +147,25 @@ export function AnnotationWorkspace() {
               <summary>Structured constraints</summary>
               <pre>{JSON.stringify(item.example.mandate.constraints, null, 2)}</pre>
             </details>
+            {item.example.audit_context && (
+              <details open>
+                <summary>Precomputed deterministic checks</summary>
+                <p>{item.example.audit_context.review_scope}</p>
+                <p><strong>Deterministic treatment:</strong> {item.example.audit_context.deterministic_treatment}</p>
+                <pre>{JSON.stringify(item.example.audit_context.commercial_rule_results, null, 2)}</pre>
+              </details>
+            )}
           </article>
 
           <form className="panel annotation-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
             {item.needs_adjudication && (
-              <p className="notice warning">Two reviewers disagreed. This label will be the adjudicated result.</p>
+              <div className="notice warning">
+                <p>Two reviewers disagreed. This label will be the adjudicated result.</p>
+                <details open>
+                  <summary>Independent reviewer decisions</summary>
+                  <pre>{JSON.stringify(item.prior_reviews, null, 2)}</pre>
+                </details>
+              </div>
             )}
             <fieldset>
               <legend>Semantic relationship: mandate to evidence</legend>
@@ -184,6 +200,13 @@ export function AnnotationWorkspace() {
                 ))}
               </div>
             </fieldset>
+            <label htmlFor="violation-types">Violation reason codes (comma-separated)</label>
+            <input
+              id="violation-types"
+              value={violationTypes}
+              onChange={(event) => setViolationTypes(event.target.value)}
+              placeholder="e.g. REQUIRED_ATTRIBUTE_EVIDENCE_MISSING"
+            />
             <label htmlFor="confidence">Confidence: {confidence.toFixed(1)}</label>
             <input id="confidence" type="range" min="0" max="1" step="0.1" value={confidence} onChange={(event) => setConfidence(Number(event.target.value))} />
             <label htmlFor="notes">Reviewer notes</label>

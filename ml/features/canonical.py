@@ -5,6 +5,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.commercial_rules import evaluate_commercial_rules
+
 from ml.data.schema import AceDatasetExample, DeviationLabel
 
 
@@ -25,13 +27,6 @@ def load_semantic_predictions(path: Path) -> dict[str, tuple[float, float]]:
         )
         for example_id, values in predictions.items()
     }
-
-
-def _values(constraint_value: Any) -> list[str]:
-    values = (
-        constraint_value if isinstance(constraint_value, list) else [constraint_value]
-    )
-    return [str(value).lower() for value in values if value is not None]
 
 
 def canonical_feature_row(
@@ -56,45 +51,26 @@ def canonical_feature_row(
         if budget_constraint and budget_constraint.currency
         else example.cart.currency
     )
-    hard_fail_count = 0
-    critical_hold_count = 0
-    currency_mismatch = mandate_currency != example.cart.currency
-    if currency_mismatch:
-        hard_fail_count += 1
-    elif budget_constraint:
-        hard_fail_count += int(example.cart.total_amount_minor > budget)
-        cumulative_breach = (
-            example.state.fulfilled_amount_minor + example.cart.total_amount_minor
-            > budget
-        )
-        hard_fail_count += int(cumulative_breach)
-        critical_hold_count += int(
-            cumulative_breach and example.state.fulfilled_amount_minor > 0
-        )
-
-    descriptions = " ".join(
-        value.description.lower() for value in example.cart.line_items
+    rule_signals = evaluate_commercial_rules(
+        example.mandate, example.state, example.cart
+    )
+    hard_fail_count = sum(signal.status == "FAIL" for signal in rule_signals)
+    critical_hold_count = sum(
+        signal.status == "FAIL" and signal.severity == "critical"
+        for signal in rule_signals
     )
     prohibited_categories: set[str] = set()
     for constraint in example.mandate.constraints:
-        if constraint.type == "prohibited_item":
-            prohibited_match = any(
-                term in descriptions for term in _values(constraint.value)
+        if constraint.type == "prohibited_category":
+            values = (
+                constraint.value
+                if isinstance(constraint.value, list)
+                else [constraint.value]
             )
-            hard_fail_count += int(prohibited_match)
-            critical_hold_count += int(prohibited_match)
-        elif constraint.type == "prohibited_category":
             prohibited_categories.update(
-                value.upper() for value in _values(constraint.value)
+                str(value).upper() for value in values if value is not None
             )
     category_mismatch = example.cart.merchant_category.upper() in prohibited_categories
-    hard_fail_count += int(category_mismatch)
-    critical_hold_count += int(category_mismatch)
-    fulfillment_breach = (
-        example.state.fulfillment_count >= example.mandate.max_fulfillments
-    )
-    hard_fail_count += int(fulfillment_breach)
-    critical_hold_count += int(fulfillment_breach)
 
     missing = int(example.cart.evidence_sufficiency != "sufficient")
     contradiction, neutral = semantic_prediction

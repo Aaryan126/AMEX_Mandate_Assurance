@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from app.commercial_rules import evaluate_commercial_rules
 from pydantic import ValidationError
 
 from ml.data.schema import (
@@ -25,6 +26,7 @@ from ml.data.transforms import (
     cumulative_overspend,
     near_budget_match,
     remove_required_evidence,
+    validate_counterfactual_invariants,
 )
 
 
@@ -139,6 +141,44 @@ def test_grounded_counterfactuals_preserve_group_and_parent() -> None:
     assert variants[1].cart.total_amount_minor == 9999
     assert variants[2].labels.deviation == DeviationLabel.AMBIGUOUS
     assert variants[3].cart.total_amount_minor == 8500
+    assert variants[3].labels.expected_treatment == "STEP_UP"
+    assert variants[3].labels.violation_types == ["SEMANTIC_UNRELATED_ITEM"]
+    for variant in variants:
+        validate_counterfactual_invariants(variant)
+
+
+def test_counterfactuals_have_exact_intended_rule_triggers() -> None:
+    parent = assign_split(example())
+    variants = {
+        "cumulative_overspend": cumulative_overspend(parent),
+        "near_budget_match": near_budget_match(parent),
+        "missing_required_evidence": remove_required_evidence(parent),
+        "unrelated_add_on": add_unrelated_item(
+            parent, product_id="gift", description="Gift card", amount_minor=500
+        ),
+    }
+    expected = {
+        "cumulative_overspend": {"CUMULATIVE_BUDGET_EXCEEDED"},
+        "near_budget_match": set(),
+        "missing_required_evidence": set(),
+        "unrelated_add_on": set(),
+    }
+    for name, value in variants.items():
+        failures = {
+            signal.reason_code
+            for signal in evaluate_commercial_rules(
+                value.mandate, value.state, value.cart
+            )
+            if signal.status == "FAIL" and signal.reason_code
+        }
+        assert failures == expected[name]
+
+
+def test_unrelated_add_on_rejects_accidental_budget_breach() -> None:
+    with pytest.raises(ValueError, match="unexpected commercial failures"):
+        add_unrelated_item(
+            example(), product_id="expensive", description="Gift card", amount_minor=3000
+        )
 
 
 def test_split_is_deterministic_and_grouped() -> None:

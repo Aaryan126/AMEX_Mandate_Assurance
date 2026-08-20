@@ -63,6 +63,10 @@ def test_disagreement_enters_adjudication_queue(annotation_store: AnnotationStor
     item = annotation_store.next_item("expert", adjudication_only=True)
     assert item is not None
     assert item.needs_adjudication is True
+    assert {value["reviewer_id"] for value in item.prior_reviews} == {
+        "reviewer-a",
+        "reviewer-b",
+    }
     annotation_store.adjudicate(
         example_id,
         AnnotationDecision(

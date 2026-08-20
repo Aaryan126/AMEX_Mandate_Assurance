@@ -167,8 +167,15 @@ class DatasetLabels(StrictModel):
         "llm_consensus",
         "llm_adjudicated",
         "mixed_review",
+        "deterministic_policy_v3",
+        "llm_assisted_v3",
+        "weak_policy_v3",
     ] = "unreviewed"
     reviewer_confidence: float | None = Field(default=None, ge=0, le=1)
+    deterministic_outcome: list[str] = Field(default_factory=list)
+    semantic_outcome: SemanticLabel | None = None
+    policy_intervention_target: ExpectedTreatment | None = None
+    binary_deviation: DeviationLabel | None = None
 
     @model_validator(mode="after")
     def reviewed_labels_have_targets(self) -> DatasetLabels:
@@ -188,7 +195,17 @@ class DatasetLabels(StrictModel):
 
 
 class DatasetSplit(StrictModel):
-    name: Literal["train", "validation", "calibration", "golden", "unassigned"] = (
+    name: Literal[
+        "train",
+        "validation",
+        "calibration",
+        "golden",
+        "unassigned",
+        "train_fit",
+        "policy_tuning",
+        "candidate_selection",
+        "final_holdout",
+    ] = (
         "unassigned"
     )
     grouping_keys: list[str] = Field(default_factory=list)

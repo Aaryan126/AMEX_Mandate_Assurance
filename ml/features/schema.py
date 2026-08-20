@@ -5,18 +5,28 @@ from typing import Any
 from app.feature_contract import (
     CATEGORICAL_FEATURES,
     FEATURE_NAMES,
+    FEATURE_PROFILES,
     FEATURE_VERSION,
+    FULL_STACK_FEATURES,
     NUMERIC_FEATURES,
+    feature_names_for_profile,
+    feature_profile_for_names,
     feature_values,
+    stack_feature_names_for_profile,
 )
 
 __all__ = [
     "CATEGORICAL_FEATURES",
     "FEATURE_NAMES",
+    "FEATURE_PROFILES",
     "FEATURE_VERSION",
+    "FULL_STACK_FEATURES",
     "NUMERIC_FEATURES",
     "compute_features",
+    "feature_names_for_profile",
+    "feature_profile_for_names",
     "feature_vector",
+    "stack_feature_names_for_profile",
 ]
 
 
@@ -42,6 +52,8 @@ def compute_features(row: dict[str, Any]) -> dict[str, float | str]:
     )
 
 
-def feature_vector(row: dict[str, Any]) -> list[float | str]:
+def feature_vector(
+    row: dict[str, Any], feature_names: list[str] | None = None
+) -> list[float | str]:
     features = compute_features(row)
-    return [features[name] for name in FEATURE_NAMES]
+    return [features[name] for name in feature_names or FEATURE_NAMES]

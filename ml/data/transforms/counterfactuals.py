@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 
+from app.commercial_rules import evaluate_commercial_rules
+
 from ml.data.schema import (
     AceDatasetExample,
     DatasetLabels,
@@ -15,7 +17,14 @@ from ml.data.schema import (
     SemanticLabel,
 )
 
-GENERATOR_VERSION = "grounded-counterfactual-v2"
+GENERATOR_VERSION = "grounded-counterfactual-v3"
+
+EXPECTED_COMMERCIAL_FAILURES = {
+    "cumulative_overspend": {"CUMULATIVE_BUDGET_EXCEEDED"},
+    "near_budget_match": set(),
+    "missing_required_evidence": set(),
+    "unrelated_add_on": set(),
+}
 
 
 def _child_id(parent: AceDatasetExample, transformation: str) -> str:
@@ -47,6 +56,40 @@ def _base_child(parent: AceDatasetExample, transformation: str) -> AceDatasetExa
     )
 
 
+def validate_counterfactual_invariants(value: AceDatasetExample) -> None:
+    transformation = str(value.provenance.transformation)
+    if transformation not in EXPECTED_COMMERCIAL_FAILURES:
+        raise ValueError(f"unknown counterfactual transformation: {transformation}")
+    signals = evaluate_commercial_rules(value.mandate, value.state, value.cart)
+    failures = {
+        str(signal.reason_code)
+        for signal in signals
+        if signal.status == "FAIL" and signal.reason_code is not None
+    }
+    if failures != EXPECTED_COMMERCIAL_FAILURES[transformation]:
+        raise ValueError(
+            f"{transformation} produced unexpected commercial failures: {sorted(failures)}"
+        )
+    unattributed_failures = [
+        signal.rule_id
+        for signal in signals
+        if signal.status == "FAIL" and signal.reason_code is None
+    ]
+    if unattributed_failures:
+        raise ValueError(
+            f"{transformation} produced unattributed failures: {unattributed_failures}"
+        )
+    if transformation == "missing_required_evidence" and (
+        value.cart.evidence_sufficiency == "sufficient"
+    ):
+        raise ValueError("missing-evidence counterfactual retained sufficient evidence")
+    if transformation == "unrelated_add_on":
+        if value.labels.expected_treatment != ExpectedTreatment.STEP_UP:
+            raise ValueError("unrelated add-on must follow the semantic STEP_UP contract")
+        if "SEMANTIC_UNRELATED_ITEM" not in value.labels.violation_types:
+            raise ValueError("unrelated add-on is missing its semantic violation code")
+
+
 def cumulative_overspend(parent: AceDatasetExample) -> AceDatasetExample:
     budget = next(
         (
@@ -63,11 +106,19 @@ def cumulative_overspend(parent: AceDatasetExample) -> AceDatasetExample:
     fulfilled = budget - parent.cart.total_amount_minor + max(1, budget // 100)
     child = _base_child(parent, "cumulative_overspend")
     child.provenance.field_origins["state"] = "synthetic_counterfactual"
-    return child.model_copy(
+    fulfillment_count = max(parent.state.fulfillment_count, 1)
+    result = child.model_copy(
         update={
+            "mandate": child.mandate.model_copy(
+                update={
+                    "max_fulfillments": max(
+                        child.mandate.max_fulfillments, fulfillment_count + 1
+                    )
+                }
+            ),
             "state": DatasetState(
                 fulfilled_amount_minor=fulfilled,
-                fulfillment_count=max(parent.state.fulfillment_count, 1),
+                fulfillment_count=fulfillment_count,
                 prior_transaction_ids=parent.state.prior_transaction_ids
                 or ["prior_grounded_purchase"],
                 history_available=True,
@@ -82,6 +133,11 @@ def cumulative_overspend(parent: AceDatasetExample) -> AceDatasetExample:
             ),
         }
     )
+    result.provenance.field_origins["mandate.max_fulfillments"] = (
+        "synthetic_counterfactual_isolation"
+    )
+    validate_counterfactual_invariants(result)
+    return result
 
 
 def near_budget_match(parent: AceDatasetExample) -> AceDatasetExample:
@@ -112,7 +168,7 @@ def near_budget_match(parent: AceDatasetExample) -> AceDatasetExample:
     updated_first = first.model_copy(
         update={"quantity": 1, "amount_minor": amount - remaining}
     )
-    return child.model_copy(
+    result = child.model_copy(
         update={
             "cart": child.cart.model_copy(
                 update={
@@ -129,6 +185,8 @@ def near_budget_match(parent: AceDatasetExample) -> AceDatasetExample:
             ),
         }
     )
+    validate_counterfactual_invariants(result)
+    return result
 
 
 def remove_required_evidence(parent: AceDatasetExample) -> AceDatasetExample:
@@ -143,7 +201,7 @@ def remove_required_evidence(parent: AceDatasetExample) -> AceDatasetExample:
         item.model_copy(update={"attributes": {}, "evidence_text": item.description})
         for item in child.cart.line_items
     ]
-    return child.model_copy(
+    result = child.model_copy(
         update={
             "cart": child.cart.model_copy(
                 update={"line_items": line_items, "evidence_sufficiency": "ambiguous"}
@@ -166,6 +224,8 @@ def remove_required_evidence(parent: AceDatasetExample) -> AceDatasetExample:
             ),
         }
     )
+    validate_counterfactual_invariants(result)
+    return result
 
 
 def add_unrelated_item(
@@ -188,7 +248,7 @@ def add_unrelated_item(
         attributes={},
         evidence_text=description,
     )
-    return child.model_copy(
+    result = child.model_copy(
         update={
             "cart": child.cart.model_copy(
                 update={
@@ -199,10 +259,12 @@ def add_unrelated_item(
             "labels": DatasetLabels(
                 deviation=DeviationLabel.VIOLATION,
                 semantic=parent.labels.semantic,
-                violation_types=["PROHIBITED_OR_UNRELATED_ITEM"],
-                expected_treatment=ExpectedTreatment.HOLD,
+                violation_types=["SEMANTIC_UNRELATED_ITEM"],
+                expected_treatment=ExpectedTreatment.STEP_UP,
                 label_source="deterministic_counterfactual",
                 reviewer_confidence=1.0,
             ),
         }
     )
+    validate_counterfactual_invariants(result)
+    return result

@@ -34,6 +34,7 @@ class AnnotationItem(BaseModel):
     example: dict[str, Any]
     completed_reviews: int
     needs_adjudication: bool
+    prior_reviews: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AnnotationProgress(BaseModel):
@@ -149,6 +150,7 @@ class AnnotationStore:
                 example=json.loads(row["payload_json"]),
                 completed_reviews=row["review_count"],
                 needs_adjudication=disagreement,
+                prior_reviews=reviews if adjudication_only else [],
             )
         return None
 

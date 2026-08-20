@@ -9,16 +9,17 @@ overview in the README and describes what must be true before an artifact is all
 flowchart LR
     RAW[Immutable public sources] --> ADAPT[Source adapters]
     ADAPT --> CANON[Canonical schema v2]
-    CANON --> MIX[Grounded counterfactual builder]
-    MIX --> SPLIT[Grouped 70/10/10/10 splits]
-    SPLIT --> REVIEW[Two LLM reviewers + adjudication + human audit]
-    REVIEW --> NLI[English NLI cross-fitting]
+    CANON --> MIX[Policy-v3 grounded counterfactuals]
+    MIX --> AUDIT[Weak, deterministic, and reviewed labels]
+    AUDIT --> DEV[Grouped development-v3 roles]
+    DEV --> NLI[Frozen English NLI predictions]
     NLI --> FEATURES[Shared features-v2 contract]
-    FEATURES --> CAT[CatBoost]
-    CAT --> STACK[OOF logistic stacker]
-    STACK --> CAL[Held-out Platt calibration]
-    CAL --> GOLDEN[Frozen golden evaluation]
-    GOLDEN --> BUNDLE[Checksum-locked serving bundle]
+    FEATURES --> CAT[CatBoost fit]
+    CAT --> CAL[Separate Platt calibration]
+    CAL --> THRESHOLD[Separate policy-threshold selection]
+    THRESHOLD --> SELECT[Candidate-selection gates]
+    SELECT -->|Pass only| GOLDEN[New independent final holdout]
+    GOLDEN -->|Pass only| BUNDLE[Checksum-locked serving bundle]
 ```
 
 No stage overwrites its input. Every materialized dataset and artifact has a manifest containing upstream
@@ -75,28 +76,54 @@ The Option 2 builder refuses a missing checksum or a `records.jsonl` whose bytes
 
 ## Labels and synthetic-data rules
 
-ESCI relevance is a weak semantic label, not a financial outcome. It is mapped as:
+ESCI relevance is a weak semantic label, not a financial outcome. Under policy-treatment-contract-v3,
+semantic mismatch alone is remediable and therefore maps to `STEP_UP`, never `HOLD`:
 
 | Source label | Semantic target | Deviation | Initial treatment |
 |---|---|---|---|
 | Exact | Entailment | Match | Approve |
 | Substitute | Neutral | Ambiguous | Step-up |
-| Complement | Contradiction | Violation | Hold target for dataset analysis |
-| Irrelevant | Contradiction | Violation | Hold target for dataset analysis |
+| Complement | Contradiction | Violation | Step-up |
+| Irrelevant | Contradiction | Violation | Step-up |
 
 Amazon-M2 has no query or ESCI relevance label. Its real evidence is an observed shopping-session
 transition. We turn the prior English UK product sequence into an explicitly synthetic intent envelope and
 treat the observed next product as a low-confidence (`0.55`) positive transition. This is useful only as
 weak pretraining evidence; it is neither an explicit customer mandate nor a financial outcome.
 
-The live policy does not blindly reproduce those treatment targets. Until real pilot outcomes exist, a
-learned semantic or fusion score can trigger only `STEP_UP`. A live `HOLD` requires a critical deterministic
-rule such as invalid authorization, replay, cumulative overspend, a prohibited item/category, unauthorized
-merchant, or fulfillment-limit breach.
+The live policy does not blindly reproduce weak source labels. Until real pilot outcomes exist, a learned
+semantic or CatBoost score can trigger only `STEP_UP`. A live `HOLD` requires a critical deterministic rule
+such as invalid authorization, replay, cumulative overspend, an explicitly prohibited item/category,
+unauthorized merchant, or fulfillment-limit breach.
 
 Synthetic transformations are allowed only when grounded in an existing public record. They preserve a
-parent ID, generator version, transformation name, and field origins. Current transformations cover a
-near-budget legitimate example, cumulative overspend, removed evidence, and a real-public-product add-on.
+parent ID, generator version, transformation name, and field origins. Generator v3 checks each transformed
+row with the same commercial-rule core used by the API and rejects accidental extra triggers. Current
+transformations cover a near-budget example, isolated cumulative overspend, removed evidence, and a
+real-public-product add-on. An unrelated add-on is `STEP_UP` unless a separate deterministic rule proves
+that it is explicitly prohibited.
+
+## Development dataset v3
+
+The immutable 60,000-row English Option 1 corpus is the source pool. The current development dataset is a
+relationship-isolated 7,000-row selection with four single-purpose roles:
+
+| Role | Rows | Permitted use |
+|---|---:|---|
+| `train_fit` | 4,000 | CatBoost fitting; includes a group-safe internal early-stopping partition |
+| `calibration` | 1,000 | Platt calibration only |
+| `policy_tuning` | 1,000 | Policy-threshold selection only |
+| `candidate_selection` | 1,000 | Architecture metrics and promotion-gate decision only |
+
+The selected data contains 3,872 `real_public` rows (55.31%) and 3,128 `hybrid_grounded` rows (44.69%).
+Every row inherits real public query/product evidence, but every row also uses a synthetic operational
+envelope because ESCI contains no Card Member mandate, budget, cart history, or Amex treatment outcome.
+`hybrid_grounded` additionally identifies an explicit grounded composite or counterfactual manipulation.
+No real Amex customer, card, or transaction data is used.
+
+Label provenance is intentionally visible: 3,856 rows (55.09%) use weak policy-v3 labels, 3,063 (43.76%)
+use deterministic policy-v3 labels, and 81 (1.16%) carry labels from the LLM-assisted v3 audit. The last
+category is not human ground truth.
 
 ## Review protocol
 
@@ -119,21 +146,44 @@ schema. A stronger pinned model adjudicates only disagreements. Export preserves
 `llm_adjudicated` provenance, so these labels cannot be mistaken for `expert_review`. A stratified human
 audit is still required before using the set as a governance-owned golden benchmark.
 
+The completed v3 assisted audit contains 400 rows. Pinned GPT-5.4 mini and GPT-4.1 mini reviewers agreed on
+194 rows; pinned GPT-5.4 adjudicated all 206 disagreements. All resolved treatments conform to the
+executable v3 policy, but the report is deliberately marked `llm_assisted_not_human`, `human_validated=false`,
+and `production_claim_eligible=false`. Only 81 audited rows were eligible for the relationship-isolated
+7,000-row development selection.
+
 ## Training and serving invariants
 
-- Training rows receive NLI predictions only from a model that did not train on their group.
-- Validation selects the model step-up threshold; calibration fits probability calibration; golden is
-  untouched until final evaluation.
+- During NLI training, supervised rows receive predictions only from a model that did not train on their
+  group. The current dataset-v3 run freezes that NLI artifact and performs inference only.
+- CatBoost fits only `train_fit`; Platt calibration uses only `calibration`; threshold selection uses only
+  `policy_tuning`; architecture and gate metrics use only `candidate_selection`.
+- A final holdout is frozen and reviewed only after the candidate passes all development gates. A consumed
+  holdout can remain a regression set but can never become an independent gate again.
 - The evaluator cannot access `attack_family` while predicting.
-- The API and offline pipeline import the same `features-v2` function.
+- The API and offline feature pipeline consume the same pure commercial-rule results for comparable fields.
 - The serving loader verifies feature order and artifact checksums.
-- The fusion manifest records the semantic model version and prediction hash; the API refuses a runtime
-  semantic/fusion version mismatch.
+- Semantic probabilities are canonical CatBoost inputs. Fusion is optional and eligible only when it adds
+  an independently trained, leakage-safe signal and passes explicit non-degradation gates.
+- Any serving manifest records the semantic model version and prediction hash; the API refuses a runtime
+  semantic/artifact version mismatch.
 - Training artifacts are unapproved by default; a separate hash-bound golden-report promotion creates the
   only manifest the Docker runtime will auto-load.
 - Fusion uses data-only JSON coefficients; no pickle is loaded by the API.
 - An artifact declaring `model_hold_enabled=true` is rejected by this API build.
 - Missing artifacts fall back to the explicit heuristic path, never an unversioned partially loaded model.
+
+## Current candidate status
+
+The current development-v3 selection is calibrated CatBoost. On the 1,000-row `candidate_selection` role it
+produced PR-AUC 0.96668, Brier score 0.08719, ECE 0.02523, operational recall 79.93%, false-step-up rate
+9.03%, and false-decline rate 0%. These are development results, not a production or independent-holdout
+claim, and they are not directly comparable with the earlier 0.5292 replacement-holdout fusion result.
+
+The candidate is `LOCKED_NON_PROMOTABLE`: it missed the 90% operational-recall gate and achieved only
+41.46% recall on the adequately supported untransformed family, below the 80% family gate. A new final
+holdout was therefore not frozen or opened. The valid next action is further development remediation, not
+threshold relaxation or deployment.
 
 ## Promotion gate
 
