@@ -22,7 +22,7 @@ usage, cost, and gate decision here before the next stage starts.
 | V3 preservation and baseline | completed | Archive and hashes in `development-v3-checkpoint.md`; 46 API, 111 ML/data, and 6 web tests passed; production build passed. |
 | Stage A: targeted data/feature/policy repair | completed, non-promotable | Fresh candidate evaluation failed recall, calibration, family, reviewed-none, and PR-AUC-regression gates. |
 | Stage B: semantic remediation | completed, non-promotable | Aggregate operations gates passed, but reviewed semantic recall was 0.4928 versus the required 0.80. |
-| Stage C: group-robust specialists | paused | Stage B failed its semantic gate; no Stage C work starts before review of this checkpoint. |
+| Stage C: group-robust specialists | completed, stopped at C1 | The no-spend gate failed: reviewed semantic policy recall regressed to 0.4353 versus the 0.70 authorization threshold. No Stage C2 review was purchased. |
 | Untouched final evaluation | conditional | Runs once after the first passing development stage. |
 
 ## Stage A gate
@@ -219,5 +219,61 @@ result.
 - Stage B improved reviewed semantic recall by 17.2 percentage points over the locked
   v3 policy, but it remains 30.7 points below the promotion gate. Status is
   `LOCKED_NON_PROMOTABLE`.
-- No final holdout is authorized, the live API remains unchanged, and Stage C is
-  paused for review.
+- No final holdout was authorized, the live API remained unchanged, and Stage C was
+  paused for review before its controlled attempt.
+
+## Stage C0 diagnosis — proceeded to local C1 only
+
+- Stage C0 used the consumed Stage B candidate for failure diagnosis only. It is not
+  authorized for training, policy tuning, or another evaluation claim.
+- The Stage B semantic model correctly classified 28.9% of reviewed contradictions,
+  47.3% of reviewed neutral cases, and 85.3% of reviewed entailments. The dominant
+  false negatives were contradiction-to-entailment (30), neutral-to-entailment (31),
+  contradiction-to-neutral (23), and neutral-to-neutral cases that remained below the
+  intervention route (22).
+- A fixed, post-hoc routing grid reached 0.6699 reviewed semantic recall, 0.9361
+  operational recall, and a 0.0973 false-step-up rate. This passed the predeclared
+  0.65 diagnostic-headroom gate but remained below the 0.80 project target. Because
+  the cohort was already consumed, these oracle values are diagnostic and not a model
+  selection or performance claim.
+- Stage C0 report SHA-256:
+  `8569ee1fe5817a8fb7fe6c113cbea1ac5676d81a684db36cd7a20db8edf73d97`.
+
+## Stage C1 group-robust specialist — stop gate
+
+- One bounded specialist was trained from the immutable semantic-v3 base using two
+  grouped cross-fit folds and one final run. All 3,000 permitted training rows received
+  label-by-source inverse-square-root weights between 0.7030x and 2.0851x; no
+  candidate or non-training row contributed to the weights. Weights SHA-256:
+  `496f39132a773215f2b77996d24fbf5aa649eeca592e902fa015efc5f579e37e`.
+- The specialist model manifest SHA-256 is
+  `32c31c47d9ab39247446cab56eb0090d74da7d445a9f665615aef10c82ecd293`.
+  A candidate-free development dataset contained 1,200 calibration and 1,200
+  policy-tuning rows. Its output contains zero Stage B candidate rows and accessed zero
+  candidate labels.
+
+| Held-out semantic metric | Stage B baseline | Stage C1 |
+|---|---:|---:|
+| Validation macro-F1 | 0.5554 | 0.5532 |
+| Validation contradiction recall | 0.2222 | 0.2000 |
+| Validation neutral recall | 0.5500 | 0.6500 |
+| Validation entailment recall | 0.9217 | 0.8783 |
+| Calibration macro-F1 | 0.5097 | 0.4707 |
+
+| Same policy-tuning role | Stage B | Stage C1 | C1 gate |
+|---|---:|---:|---:|
+| Reviewed semantic recall | 0.4588 | 0.4353 | >= 0.70 (failed) |
+| Operational recall | 0.8047 | 0.8047 | no regression (passed) |
+| False-step-up rate | 0.0992 | 0.0992 | <= 0.10 (passed) |
+| False-decline rate | 0.0000 | 0.0000 | <= 0.02 (passed) |
+| PR-AUC | 0.9510 | 0.9508 | reported |
+| ECE | 0.0231 | 0.0232 | <= 0.08 (passed) |
+
+- The specialist traded some entailment/contradiction accuracy for better neutral
+  recall, but did not improve the actual reviewed intervention objective. Status is
+  `STOP_STAGE_C1`.
+- Stage C1 evaluation SHA-256:
+  `7b1764437a6f2467d935c60f45407d0d73cb95a5d3458a0ccff121704c5ae25d`.
+- Stage C2, fresh LLM review, and final holdout evaluation are not authorized. Stage C
+  incurred USD 0 in API cost, the live API remains unchanged, and this controlled
+  Stage C attempt is complete.
