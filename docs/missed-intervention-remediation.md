@@ -21,8 +21,8 @@ usage, cost, and gate decision here before the next stage starts.
 |---|---|---|
 | V3 preservation and baseline | completed | Archive and hashes in `development-v3-checkpoint.md`; 46 API, 111 ML/data, and 6 web tests passed; production build passed. |
 | Stage A: targeted data/feature/policy repair | completed, non-promotable | Fresh candidate evaluation failed recall, calibration, family, reviewed-none, and PR-AUC-regression gates. |
-| Stage B: semantic remediation | in progress | Revised after Stage A diagnosis; balanced score-stratified review selection is being built. |
-| Stage C: group-robust specialists | conditional | Runs only if Stage B fails its fresh locked gate. |
+| Stage B: semantic remediation | completed, non-promotable | Aggregate operations gates passed, but reviewed semantic recall was 0.4928 versus the required 0.80. |
+| Stage C: group-robust specialists | paused | Stage B failed its semantic gate; no Stage C work starts before review of this checkpoint. |
 | Untouched final evaluation | conditional | Runs once after the first passing development stage. |
 
 ## Stage A gate
@@ -155,3 +155,69 @@ shows a benefit. Stage B will be reported before any Stage C work begins.
 - Local validation: 6 focused Stage B/Stage A selection tests and 69 combined
   data/feature/evaluation tests passed. Estimated reviewer cost is about USD 3.50;
   estimated reviewer plus adjudication cost is USD 9–12, depending on agreement rate.
+- All six reviewer jobs completed with 500/500 successful requests and zero failures:
+  GPT-5.4-mini batches `batch_6a86fe1147688190b8397299a71ddf18`,
+  `batch_6a86fe1437e881909cb59cb29e29e256`, and
+  `batch_6a86fe1627748190b791e2d84dd8c731`; GPT-4.1-mini batches
+  `batch_6a86fe192ddc81909229a5c0428a2dd0`,
+  `batch_6a86fe1b84a48190b64ea5f6ff5b3371`, and
+  `batch_6a86fe1dfaa4819093dc3ede05333c62`.
+- Review import produced 974 agreements and 526 disagreements (64.9% agreement),
+  with no missing or single-review rows. The validated 526-request GPT-5.4
+  adjudication job is `batch_6a86ff2250ec8190aa767429ce679672`; adjudication input
+  SHA-256 is `71be953e32864f781e7c0e1c4a17e5a9a81ba88e7af41fa96c8a7521bc3bf26c`.
+
+## Stage B training and selection
+
+- All 1,500 labels resolved: 974 by reviewer consensus and 526 by GPT-5.4
+  adjudication. One truncated adjudication was successfully retried. The reviewed
+  dataset SHA-256 is
+  `3bcf378de782be9a4785755aefc5347fab80a19d4fcda6ba23192942747b4319`.
+- The semantic corpus contains 3,400 rows: 3,000 grouped training rows, 200 validation
+  rows, and 200 calibration rows. It combines 700 new Stage B training reviews, 200
+  Stage A training-only reviews, and 2,100 prior training-only replay rows. The 400
+  Stage B candidate reviews were excluded from training and tuning. Corpus SHA-256:
+  `5c13c8c92a78d5dc7539d14e014444fe231a432286525e15656bd680dc4e1c76`.
+- Both semantic candidates used five-fold grouped out-of-fold training from the frozen
+  semantic-v3 base. The baseline improved validation macro-F1 from 0.4622 to 0.5554
+  and contradiction recall from 0.0667 to 0.2222. The JTT variant upweighted 519
+  baseline errors by 4x, but reduced validation macro-F1 to 0.5361 and contradiction
+  recall to 0.1556, so it was rejected. The baseline model was selected.
+- The structured Stage B dataset contains 8,500 rows: 4,700 training, 1,200
+  calibration, 1,200 policy-tuning, and 1,400 single-use candidate rows. Dataset
+  SHA-256 is
+  `8c075f685b434b07f342d40f394ab935df56ef86f2e4bde370a23603e2043788`;
+  features-v3 SHA-256 is
+  `bbf04690a584580460218b32b1f06415e30d30353349333e6944f378eafabfd7`.
+- Policy tuning selected the locked-v3 CatBoost score with semantic-v4 routing over a
+  newly retrained CatBoost candidate. Its intervention threshold is 0.6565 and neutral
+  routing threshold is 0.70. Direct contradiction overrides remain disabled.
+
+## Stage B final result — locked non-promotable
+
+The one-time 1,400-row candidate evaluation contains 400 LLM-assisted semantic rows
+and 1,000 fresh deterministic-policy rows. Candidate targets were excluded from model
+training and policy tuning. The high aggregate recall is dominated by deterministic
+attack families, so the separately locked reviewed-semantic gate is the decisive
+result.
+
+| Metric | Stage B | Locked v3 on same candidate | Gate |
+|---|---:|---:|---:|
+| PR-AUC | 0.9958 | 0.9958 | v4 >= v3 - 0.01 (passed) |
+| Brier | 0.0477 | 0.0477 | reported |
+| ECE | 0.0373 | 0.0373 | <= 0.08 (passed) |
+| Intervention recall | 0.9029 | 0.8697 | >= 0.90 (passed) |
+| False step-up rate | 0.0531 | 0.0398 | <= 0.10 (passed) |
+| False decline rate | 0.0000 | 0.0000 | <= 0.02 (passed) |
+| Reviewed semantic recall | 0.4928 | 0.3206 | >= 0.80 (failed) |
+| Challenge recall | 0.6000 | not a v3 gate | diagnostic |
+
+- Supported-family recall passed for cumulative overspend, missing evidence, and
+  unrelated add-on (all 1.0), but failed for the reviewed `none` semantic family at
+  0.4928. Near-budget recall was 0.5789 on 19 violations and remained below the
+  50-violation support threshold.
+- Stage B improved reviewed semantic recall by 17.2 percentage points over the locked
+  v3 policy, but it remains 30.7 points below the promotion gate. Status is
+  `LOCKED_NON_PROMOTABLE`.
+- No final holdout is authorized, the live API remains unchanged, and Stage C is
+  paused for review.

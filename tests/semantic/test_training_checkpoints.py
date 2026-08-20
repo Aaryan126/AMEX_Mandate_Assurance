@@ -108,6 +108,30 @@ def test_prepare_state_binds_dataset_base_configuration_and_groups(
         prepare_training_run(dataset, base_model, output, folds=2, epochs=1)
 
 
+def test_prepare_state_binds_jtt_sample_weights(tmp_path, monkeypatch) -> None:
+    dataset = tmp_path / "dataset.jsonl"
+    dataset.write_text("immutable dataset\n")
+    base_model = _base_model(tmp_path / "base")
+    rows = _rows()
+    _patch_rows(monkeypatch, rows)
+    key = f"{rows[0].example_id}\x1f{rows[0].constraint_id}"
+    weights = tmp_path / "weights.json"
+    weights.write_text(json.dumps({"weights": {key: 4.0}}))
+
+    prepare_training_run(
+        dataset,
+        base_model,
+        tmp_path / "output",
+        folds=2,
+        epochs=1,
+        sample_weights_path=weights,
+    )
+
+    state = json.loads((tmp_path / "output" / "training-state.json").read_text())
+    assert state["configuration"]["sample_weights"]["weighted_rows"] == 1
+    assert state["configuration"]["sample_weights"]["maximum"] == 4.0
+
+
 def test_completed_fold_is_skipped_and_tampering_is_rejected(
     tmp_path, monkeypatch
 ) -> None:

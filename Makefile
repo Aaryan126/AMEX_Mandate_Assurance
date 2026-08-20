@@ -2,7 +2,7 @@
 .PHONY: semantic-fast-track-complete-predictions features-fast-track train-fast-track-v2 train-fast-track-v3-no-semantic train-fast-track-v3-semantic select-fast-track-v3 replacement-holdout-semantic-inference replacement-holdout-features evaluate-fast-track-v3-replacement diagnose-step24-failure human-audit-prepare human-audit-validate human-audit-status human-audit-report human-audit-api human-audit-assisted-prepare human-audit-assisted-submit human-audit-assisted-status data-option1-v3 data-development-v3
 .PHONY: v4-pool-freeze v4-pool-semantic v4-pool-features v4-review-select v4-review-prepare v4-review-validate v4-review-submit v4-review-status v4-review-wait v4-review-download v4-review-validate-outputs v4-review-import v4-adjudication-prepare v4-adjudication-validate v4-adjudication-submit v4-adjudication-status v4-adjudication-wait v4-adjudication-download v4-adjudication-validate-output v4-adjudication-import v4-review-export v4-data-build
 .PHONY: v4-dataset-semantic v4-features-v3 v4-train-stage-a v4-evaluate-stage-a
-.PHONY: stage-b-pool-freeze stage-b-review-select stage-b-review-prepare stage-b-review-validate stage-b-review-submit stage-b-review-status stage-b-review-wait stage-b-review-download stage-b-review-validate-outputs stage-b-review-import stage-b-adjudication-prepare stage-b-adjudication-validate stage-b-adjudication-submit stage-b-adjudication-status stage-b-adjudication-wait stage-b-adjudication-download stage-b-adjudication-validate-output stage-b-adjudication-import stage-b-review-export
+.PHONY: stage-b-pool-freeze stage-b-review-select stage-b-review-prepare stage-b-review-validate stage-b-review-submit stage-b-review-status stage-b-review-wait stage-b-review-download stage-b-review-validate-outputs stage-b-review-import stage-b-adjudication-prepare stage-b-adjudication-validate stage-b-adjudication-submit stage-b-adjudication-status stage-b-adjudication-wait stage-b-adjudication-download stage-b-adjudication-validate-output stage-b-adjudication-import stage-b-review-export stage-b-semantic-corpus stage-b-semantic-base stage-b-semantic-baseline-prepare stage-b-semantic-baseline-fold stage-b-semantic-baseline-finalize stage-b-semantic-jtt-weights stage-b-semantic-jtt-prepare stage-b-semantic-jtt-fold stage-b-semantic-jtt-finalize stage-b-data-build stage-b-semantic-inference stage-b-semantic-merge stage-b-features stage-b-train stage-b-evaluate
 
 FAST_TRACK_SEMANTIC_DATASET ?= ml/data/generated/fast-track/option1/ace-fast-track-reviewed.jsonl
 FAST_TRACK_SEMANTIC_BASE_MODEL ?= artifacts/models/semantic-domain-fast-track
@@ -64,6 +64,19 @@ STAGE_B_REVIEWED ?= $(STAGE_B_ROOT)/review/reviewed.jsonl
 STAGE_B_ADJUDICATION ?= $(STAGE_B_REVIEW_DIR)/adjudication.jsonl
 STAGE_B_ADJUDICATION_STATE ?= $(STAGE_B_REVIEW_DIR)/adjudication.state.json
 STAGE_B_ADJUDICATION_OUTPUT ?= $(STAGE_B_REVIEW_DIR)/adjudication.output.jsonl
+STAGE_B_SEMANTIC_CORPUS ?= $(STAGE_B_ROOT)/semantic/semantic-v4-replay.jsonl
+STAGE_B_SEMANTIC_BASE ?= artifacts/base-models/semantic-v3-locked-copy
+STAGE_B_SEMANTIC_BASELINE ?= artifacts/models/semantic-v4-baseline
+STAGE_B_SEMANTIC_BASELINE_ARGS = --dataset $(STAGE_B_SEMANTIC_CORPUS) --base-model $(STAGE_B_SEMANTIC_BASE) --output $(STAGE_B_SEMANTIC_BASELINE) --folds 5 --epochs 1 --batch-size 16 --learning-rate 5e-6 --gradient-accumulation-steps 1 --gradient-checkpointing --prediction-batch-size 32
+STAGE_B_JTT_WEIGHTS ?= $(STAGE_B_ROOT)/semantic/jtt-weights.json
+STAGE_B_SEMANTIC_JTT ?= artifacts/models/semantic-v4-jtt
+STAGE_B_SEMANTIC_JTT_ARGS = --dataset $(STAGE_B_SEMANTIC_CORPUS) --base-model $(STAGE_B_SEMANTIC_BASE) --output $(STAGE_B_SEMANTIC_JTT) --sample-weights $(STAGE_B_JTT_WEIGHTS) --folds 5 --epochs 1 --batch-size 16 --learning-rate 5e-6 --gradient-accumulation-steps 1 --gradient-checkpointing --prediction-batch-size 32
+STAGE_B_DATASET ?= $(STAGE_B_ROOT)/dataset/ace-development-v4-semantic.jsonl
+STAGE_B_SEMANTIC_PREDICTIONS ?= $(STAGE_B_ROOT)/dataset/semantic-predictions.jsonl
+STAGE_B_SEMANTIC_MERGED ?= $(STAGE_B_ROOT)/dataset/semantic-predictions.oof.jsonl
+STAGE_B_FEATURES ?= $(STAGE_B_ROOT)/dataset/features-v3.jsonl
+STAGE_B_TABULAR ?= artifacts/models/development-v4-semantic-stage-b
+STAGE_B_EVALUATION ?= artifacts/reports/development-v4-semantic-stage-b-evaluation.json
 
 stage-b-pool-freeze:
 	python3 -m ml.data.build_stage_b freeze-pool \
@@ -164,6 +177,95 @@ stage-b-adjudication-import:
 stage-b-review-export:
 	python3 -m ml.data.export_annotations --dataset $(STAGE_B_REVIEW_QUEUE) \
 		--reviews $(STAGE_B_REVIEWS) --output $(STAGE_B_REVIEWED)
+
+stage-b-semantic-corpus:
+	python3 -m ml.data.build_semantic_v4 \
+		--stage-b-reviewed $(STAGE_B_REVIEWED) \
+		--stage-a-reviewed $(V4_REVIEWED) \
+		--replay-source $(FAST_TRACK_SEMANTIC_DATASET) \
+		--output $(STAGE_B_SEMANTIC_CORPUS) --replay-target 2100
+
+stage-b-semantic-base:
+	python3 -m ml.semantic.freeze_base \
+		--source-model $(FAST_TRACK_SEMANTIC_OUTPUT)/model \
+		--source-manifest $(FAST_TRACK_SEMANTIC_OUTPUT)/manifest.json \
+		--output $(STAGE_B_SEMANTIC_BASE)
+
+stage-b-semantic-baseline-prepare:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_BASELINE_ARGS) --stage prepare
+
+stage-b-semantic-baseline-fold:
+	@test -n "$(FOLD)" || (echo "FOLD is required" && exit 2)
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_BASELINE_ARGS) --stage fold --fold-index "$(FOLD)"
+
+stage-b-semantic-baseline-finalize:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_BASELINE_ARGS) --stage finalize
+
+stage-b-semantic-jtt-weights:
+	python3 -m ml.semantic.jtt \
+		--predictions $(STAGE_B_SEMANTIC_BASELINE)/semantic-predictions.jsonl \
+		--output $(STAGE_B_JTT_WEIGHTS) --error-weight 4
+
+stage-b-semantic-jtt-prepare:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_JTT_ARGS) --stage prepare
+
+stage-b-semantic-jtt-fold:
+	@test -n "$(FOLD)" || (echo "FOLD is required" && exit 2)
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_JTT_ARGS) --stage fold --fold-index "$(FOLD)"
+
+stage-b-semantic-jtt-finalize:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.train_multilingual \
+		$(STAGE_B_SEMANTIC_JTT_ARGS) --stage finalize
+
+stage-b-data-build:
+	python3 -m ml.data.build_stage_b_dataset \
+		--v3-dataset ml/data/generated/development-v3/ace-development-v3.jsonl \
+		--stage-b-reviewed $(STAGE_B_REVIEWED) \
+		--stage-b-pool $(STAGE_B_POOL) \
+		--output $(STAGE_B_DATASET)
+
+stage-b-semantic-inference:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.infer_external \
+		--dataset $(STAGE_B_DATASET) \
+		--semantic-manifest $(STAGE_B_SEMANTIC_BASELINE)/manifest.json \
+		--model $(STAGE_B_SEMANTIC_BASELINE)/model \
+		--output $(STAGE_B_SEMANTIC_PREDICTIONS) --batch-size 32
+
+stage-b-semantic-merge:
+	python3 -m ml.semantic.merge_stage_b_predictions \
+		--dataset $(STAGE_B_DATASET) \
+		--external $(STAGE_B_SEMANTIC_PREDICTIONS) \
+		--oof $(STAGE_B_SEMANTIC_BASELINE)/semantic-predictions.jsonl \
+		--output $(STAGE_B_SEMANTIC_MERGED) --expected-replacements 805
+
+stage-b-features:
+	python3 -m ml.features.build_features_v3 \
+		--dataset $(STAGE_B_DATASET) \
+		--semantic-predictions $(STAGE_B_SEMANTIC_MERGED) \
+		--output $(STAGE_B_FEATURES)
+
+stage-b-train:
+	python3 -m ml.tabular.train_stage_b \
+		--features $(STAGE_B_FEATURES) --output $(STAGE_B_TABULAR) \
+		--v3-model artifacts/models/development-v3-catboost/catboost-v1.cbm \
+		--v3-manifest artifacts/models/development-v3-catboost/catboost-v1.manifest.json \
+		--v3-calibrator artifacts/models/development-v3-baselines/platt-calibrator-v3.joblib
+
+stage-b-evaluate:
+	python3 -m ml.evaluation.evaluate_stage_b \
+		--features $(STAGE_B_FEATURES) \
+		--selection-ledger $(STAGE_B_SELECTION_LEDGER) \
+		--artifacts $(STAGE_B_TABULAR) \
+		--v3-model artifacts/models/development-v3-catboost/catboost-v1.cbm \
+		--v3-manifest artifacts/models/development-v3-catboost/catboost-v1.manifest.json \
+		--v3-calibrator artifacts/models/development-v3-baselines/platt-calibrator-v3.joblib \
+		--v3-baseline artifacts/models/development-v3-baselines/baseline-report.json \
+		--output $(STAGE_B_EVALUATION)
 
 v4-pool-freeze:
 	python3 -m ml.data.build_dataset_v4 freeze-pool \
@@ -380,7 +482,7 @@ test: test-api test-web
 
 test-api:
 	python3 -m pytest services/api/tests -q
-	python3 -m pytest tests -q
+	python3 -m pytest tests -q --rootdir=.
 
 test-web:
 	npm --prefix apps/web test -- --run

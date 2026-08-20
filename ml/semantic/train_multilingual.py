@@ -116,6 +116,7 @@ def _train_model(
     freeze_classifier: bool = False,
     require_accelerator: bool = False,
     class_weights: list[float] | None = None,
+    sample_weights: dict[str, float] | None = None,
 ) -> tuple[Any, Any]:
     torch, DataLoader, Dataset, AutoModel, AutoTokenizer = _dependencies()
     random.seed(2026)
@@ -155,10 +156,19 @@ def _train_model(
             padding=True,
             return_tensors="pt",
         )
-        return {
+        batch = {
             **encoded,
             "labels": torch.tensor([value.label for value in values]),
         }
+        if sample_weights is not None:
+            batch["sample_weights"] = torch.tensor(
+                [
+                    sample_weights.get(f"{value.example_id}\x1f{value.constraint_id}", 1.0)
+                    for value in values
+                ],
+                dtype=torch.float32,
+            )
+        return batch
 
     device = torch.device(
         "cuda"
@@ -210,14 +220,18 @@ def _train_model(
         optimizer.zero_grad(set_to_none=True)
         for step, batch in enumerate(loader, 1):
             batch = {key: value.to(device) for key, value in batch.items()}
-            if weight_tensor is None:
+            batch_weights = batch.pop("sample_weights", None)
+            if weight_tensor is None and batch_weights is None:
                 loss = model(**batch).loss
             else:
                 labels = batch.pop("labels")
                 logits = model(**batch).logits
-                loss = torch.nn.functional.cross_entropy(
-                    logits, labels, weight=weight_tensor
+                losses = torch.nn.functional.cross_entropy(
+                    logits, labels, weight=weight_tensor, reduction="none"
                 )
+                if batch_weights is not None:
+                    losses = losses * batch_weights
+                loss = losses.mean()
             loss = loss / gradient_accumulation_steps
             if not bool(torch.isfinite(loss).item()):
                 raise FloatingPointError(
@@ -379,7 +393,8 @@ def _prepare_context(
     gradient_accumulation_steps: int,
     gradient_checkpointing: bool,
     prediction_batch_size: int,
-) -> tuple[list[NliTrainingRow], Path, dict[str, Any], dict[str, Any]]:
+    sample_weights_path: Path | None = None,
+) -> tuple[list[NliTrainingRow], Path, dict[str, Any], dict[str, Any], dict[str, float] | None]:
     rows = load_nli_rows(dataset_path)
     configuration = training_configuration(
         folds=folds,
@@ -390,6 +405,28 @@ def _prepare_context(
         gradient_checkpointing=gradient_checkpointing,
         prediction_batch_size=prediction_batch_size,
     )
+    sample_weights = None
+    if sample_weights_path is not None:
+        payload = json.loads(sample_weights_path.read_text())
+        raw_weights = payload.get("weights")
+        if not isinstance(raw_weights, dict) or not raw_weights:
+            raise ValueError("sample-weights artifact must contain a non-empty weights map")
+        sample_weights = {str(key): float(value) for key, value in raw_weights.items()}
+        training_keys = {
+            f"{row.example_id}\x1f{row.constraint_id}" for row in rows if row.split == "train"
+        }
+        if not set(sample_weights).issubset(training_keys):
+            raise ValueError("sample weights contain non-training or unknown semantic keys")
+        if any(not math.isfinite(value) or value <= 0 for value in sample_weights.values()):
+            raise ValueError("sample weights must be finite and positive")
+        configuration["sample_weights"] = {
+            "path": str(sample_weights_path),
+            "sha256": file_sha256(sample_weights_path),
+            "weighted_rows": len(sample_weights),
+            "minimum": min(sample_weights.values()),
+            "maximum": max(sample_weights.values()),
+            "default": 1.0,
+        }
     output_dir.mkdir(parents=True, exist_ok=True)
     state_path = output_dir / "training-state.json"
     state = prepare_training_state(
@@ -401,7 +438,7 @@ def _prepare_context(
         folds=folds,
         configuration=configuration,
     )
-    return rows, state_path, state, configuration
+    return rows, state_path, state, configuration, sample_weights
 
 
 def prepare_training_run(
@@ -416,8 +453,9 @@ def prepare_training_run(
     gradient_accumulation_steps: int = 1,
     gradient_checkpointing: bool = False,
     prediction_batch_size: int = 32,
+    sample_weights_path: Path | None = None,
 ) -> dict[str, Any]:
-    _, state_path, state, _ = _prepare_context(
+    _, state_path, state, _, _ = _prepare_context(
         dataset_path,
         base_model,
         output_dir,
@@ -428,6 +466,7 @@ def prepare_training_run(
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=gradient_checkpointing,
         prediction_batch_size=prediction_batch_size,
+        sample_weights_path=sample_weights_path,
     )
     return {
         "state_path": str(state_path),
@@ -490,8 +529,9 @@ def run_semantic_fold(
     gradient_accumulation_steps: int = 1,
     gradient_checkpointing: bool = False,
     prediction_batch_size: int = 32,
+    sample_weights_path: Path | None = None,
 ) -> dict[str, Any]:
-    rows, state_path, state, _ = _prepare_context(
+    rows, state_path, state, _, sample_weights = _prepare_context(
         dataset_path,
         base_model,
         output_dir,
@@ -502,6 +542,7 @@ def run_semantic_fold(
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=gradient_checkpointing,
         prediction_batch_size=prediction_batch_size,
+        sample_weights_path=sample_weights_path,
     )
     if not 0 <= fold < folds:
         raise ValueError(f"fold index must be between 0 and {folds - 1}")
@@ -537,6 +578,7 @@ def run_semantic_fold(
             learning_rate=learning_rate,
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=gradient_checkpointing,
+            sample_weights=sample_weights,
         )
         logits = _predict(
             model,
@@ -584,8 +626,9 @@ def train(
     gradient_accumulation_steps: int = 1,
     gradient_checkpointing: bool = False,
     prediction_batch_size: int = 32,
+    sample_weights_path: Path | None = None,
 ) -> dict[str, Any]:
-    rows, state_path, _, configuration = _prepare_context(
+    rows, state_path, _, configuration, sample_weights = _prepare_context(
         dataset_path,
         base_model,
         output_dir,
@@ -596,6 +639,7 @@ def train(
         gradient_accumulation_steps=gradient_accumulation_steps,
         gradient_checkpointing=gradient_checkpointing,
         prediction_batch_size=prediction_batch_size,
+        sample_weights_path=sample_weights_path,
     )
     training = [value for value in rows if value.split == "train"]
     validation = [value for value in rows if value.split == "validation"]
@@ -614,6 +658,7 @@ def train(
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=gradient_checkpointing,
             prediction_batch_size=prediction_batch_size,
+            sample_weights_path=sample_weights_path,
         )
     state = validate_training_state(
         state_path,
@@ -641,6 +686,7 @@ def train(
             learning_rate=learning_rate,
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=gradient_checkpointing,
+            sample_weights=sample_weights,
         )
         heldout_logits = _predict(
             model,
@@ -707,6 +753,7 @@ def train(
             "prediction_batch_size": prediction_batch_size,
             "temperature": temperature,
             "random_seed": 2026,
+            "sample_weights": configuration.get("sample_weights"),
             "training_state": str(state_path),
         }
         manifest_path = output_dir / "manifest.json"
@@ -749,6 +796,7 @@ def main() -> None:
     parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--gradient-checkpointing", action="store_true")
     parser.add_argument("--prediction-batch-size", type=int, default=32)
+    parser.add_argument("--sample-weights", type=Path)
     parser.add_argument(
         "--stage", choices=["all", "prepare", "fold", "finalize"], default="all"
     )
@@ -762,6 +810,7 @@ def main() -> None:
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
         "gradient_checkpointing": args.gradient_checkpointing,
         "prediction_batch_size": args.prediction_batch_size,
+        "sample_weights_path": args.sample_weights,
     }
     if args.stage == "prepare":
         result = prepare_training_run(
