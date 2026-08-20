@@ -1,5 +1,6 @@
 .PHONY: install test test-api test-web test-e2e dev docker-up docker-down seed data-esci data-option1 data-option2 data-option2-uci data-option2-db1b data-option2-usaspending data-option2-amazon data-fast-track-option1 data-fast-track-option2 data-validate annotate-api llm-prepare llm-submit-a llm-submit-b llm-fast-track-prepare llm-fast-track-validate llm-fast-track-submit-a llm-fast-track-submit-b llm-fast-track-validate-submissions llm-fast-track-status llm-fast-track-wait llm-fast-track-download llm-fast-track-validate-outputs llm-fast-track-import llm-fast-track-prepare-adjudication llm-fast-track-validate-adjudication llm-fast-track-submit-adjudication llm-fast-track-adjudication-status llm-fast-track-adjudication-wait llm-fast-track-adjudication-download llm-fast-track-validate-adjudication-output llm-fast-track-prepare-adjudication-retry llm-fast-track-submit-adjudication-retry llm-fast-track-adjudication-retry-status llm-fast-track-adjudication-retry-wait llm-fast-track-adjudication-retry-download llm-fast-track-validate-adjudication-retry-output llm-fast-track-merge-adjudication-retry llm-fast-track-import-adjudication llm-fast-track-export-reviewed llm-fast-track-validate-reviewed semantic-domain-fast-track-prepare semantic-domain-fast-track-train semantic-fast-track-prepare semantic-fast-track-fold semantic-fast-track-finalize export-reviews features train-v2 evaluate-v2 promote-v2
 .PHONY: semantic-fast-track-complete-predictions features-fast-track train-fast-track-v2 train-fast-track-v3-no-semantic train-fast-track-v3-semantic select-fast-track-v3 replacement-holdout-semantic-inference replacement-holdout-features evaluate-fast-track-v3-replacement diagnose-step24-failure human-audit-prepare human-audit-validate human-audit-status human-audit-report human-audit-api human-audit-assisted-prepare human-audit-assisted-submit human-audit-assisted-status data-option1-v3 data-development-v3
+.PHONY: v4-pool-freeze v4-pool-semantic v4-pool-features v4-review-select v4-review-prepare v4-review-validate v4-review-submit v4-review-status v4-review-wait v4-review-download v4-review-validate-outputs v4-review-import v4-adjudication-prepare v4-adjudication-validate v4-adjudication-submit v4-adjudication-status v4-adjudication-wait v4-adjudication-download v4-adjudication-validate-output v4-adjudication-import v4-review-export v4-data-build
 
 FAST_TRACK_SEMANTIC_DATASET ?= ml/data/generated/fast-track/option1/ace-fast-track-reviewed.jsonl
 FAST_TRACK_SEMANTIC_BASE_MODEL ?= artifacts/models/semantic-domain-fast-track
@@ -34,6 +35,139 @@ STEP23_EVALUATION_REPORT ?= artifacts/reports/step23-replacement-holdout-evaluat
 HUMAN_AUDIT_DIR ?= ml/data/annotations/human-audit-v1
 HUMAN_AUDIT_REPORT ?= artifacts/reports/human-audit-v1.json
 HUMAN_AUDIT_ASSISTED_DIR ?= $(HUMAN_AUDIT_DIR)/assisted
+V4_ROOT ?= ml/data/generated/development-v4
+V4_POOL ?= $(V4_ROOT)/pool/unused-pool.jsonl
+V4_POOL_SEMANTIC ?= $(V4_ROOT)/pool/semantic-predictions.jsonl
+V4_POOL_FEATURES ?= $(V4_ROOT)/pool/features-v2.jsonl
+V4_REVIEW_QUEUE ?= $(V4_ROOT)/review/review-queue.jsonl
+V4_SELECTION_LEDGER ?= $(V4_ROOT)/review/selection-ledger.jsonl
+V4_REVIEW_DIR ?= ml/data/annotations/development-v4
+V4_REVIEW_OUTPUTS ?= $(V4_REVIEW_DIR)/outputs
+V4_REVIEW_STATES ?= $(V4_REVIEW_DIR)/states
+V4_REVIEWS ?= $(V4_REVIEW_DIR)/reviews.sqlite3
+V4_REVIEWED ?= $(V4_ROOT)/review/reviewed.jsonl
+V4_ADJUDICATION ?= $(V4_REVIEW_DIR)/adjudication.jsonl
+V4_ADJUDICATION_STATE ?= $(V4_REVIEW_DIR)/adjudication.state.json
+V4_ADJUDICATION_OUTPUT ?= $(V4_REVIEW_DIR)/adjudication.output.jsonl
+
+v4-pool-freeze:
+	python3 -m ml.data.build_dataset_v4 freeze-pool \
+		--source ml/data/generated/option1-en-v3/ace-esci-en-hybrid.jsonl \
+		--exclude ml/data/generated/development-v3/ace-development-v3.jsonl \
+		--exclude ml/data/generated/fast-track/option1/ace-fast-track-reviewed.jsonl \
+		--exclude ml/data/generated/fast-track/replacement-holdout/replacement-holdout.reviewed.jsonl \
+		--output $(V4_POOL)
+
+v4-pool-semantic:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.infer_external \
+		--dataset $(V4_POOL) \
+		--semantic-manifest $(FAST_TRACK_SEMANTIC_OUTPUT)/manifest.json \
+		--model $(FAST_TRACK_SEMANTIC_OUTPUT)/model \
+		--output $(V4_POOL_SEMANTIC) \
+		--batch-size 32
+
+v4-pool-features:
+	python3 -m ml.features.build_features \
+		--dataset $(V4_POOL) \
+		--semantic-predictions $(V4_POOL_SEMANTIC) \
+		--output $(V4_POOL_FEATURES)
+
+v4-review-select:
+	python3 -m ml.data.build_dataset_v4 select-review \
+		--pool $(V4_POOL) \
+		--features $(V4_POOL_FEATURES) \
+		--model artifacts/models/development-v3-catboost/catboost-v1.cbm \
+		--model-manifest artifacts/models/development-v3-catboost/catboost-v1.manifest.json \
+		--baseline-report artifacts/models/development-v3-baselines/baseline-report.json \
+		--output $(V4_REVIEW_QUEUE) \
+		--ledger $(V4_SELECTION_LEDGER)
+
+v4-review-prepare:
+	python3 -m ml.data.llm_annotations prepare \
+		--dataset $(V4_REVIEW_QUEUE) \
+		--output $(V4_REVIEW_DIR)/requests \
+		--locale en-US --max-examples 1200 --chunk-size 600 \
+		--seed 2030 --blind-provenance --prompt-profile policy-v3
+
+v4-review-validate:
+	python3 -m ml.data.llm_annotations validate-prepared \
+		--input $(V4_REVIEW_DIR)/requests
+
+v4-review-submit:
+	python3 -m ml.data.llm_annotations submit-shards \
+		--input $(V4_REVIEW_DIR)/requests --states $(V4_REVIEW_STATES) \
+		--role a --key-file .env.annotation
+	python3 -m ml.data.llm_annotations submit-shards \
+		--input $(V4_REVIEW_DIR)/requests --states $(V4_REVIEW_STATES) \
+		--role b --key-file .env.annotation
+
+v4-review-status:
+	python3 -m ml.data.llm_annotations status-shards \
+		--states $(V4_REVIEW_STATES) --key-file .env.annotation
+
+v4-review-wait:
+	python3 -m ml.data.llm_annotations wait-shards \
+		--states $(V4_REVIEW_STATES) --key-file .env.annotation --interval-seconds 30
+
+v4-review-download:
+	python3 -m ml.data.llm_annotations download-shards \
+		--states $(V4_REVIEW_STATES) --outputs $(V4_REVIEW_OUTPUTS) \
+		--key-file .env.annotation
+
+v4-review-validate-outputs:
+	python3 -m ml.data.llm_annotations validate-outputs \
+		--input $(V4_REVIEW_DIR)/requests --outputs $(V4_REVIEW_OUTPUTS)
+
+v4-review-import:
+	python3 -m ml.data.llm_annotations import-shards \
+		--dataset $(V4_REVIEW_QUEUE) --reviews $(V4_REVIEWS) \
+		--input $(V4_REVIEW_DIR)/requests --outputs $(V4_REVIEW_OUTPUTS)
+
+v4-adjudication-prepare:
+	python3 -m ml.data.llm_annotations prepare-adjudication \
+		--dataset $(V4_REVIEW_QUEUE) --reviews $(V4_REVIEWS) \
+		--output $(V4_ADJUDICATION) --blind-provenance --prompt-profile policy-v3
+
+v4-adjudication-validate:
+	python3 -m ml.data.llm_annotations validate-adjudication \
+		--dataset $(V4_REVIEW_QUEUE) --reviews $(V4_REVIEWS) \
+		--input $(V4_ADJUDICATION) \
+		--manifest $(V4_REVIEW_DIR)/adjudication.manifest.json
+
+v4-adjudication-submit:
+	python3 -m ml.data.llm_annotations submit --input $(V4_ADJUDICATION) \
+		--state $(V4_ADJUDICATION_STATE) --key-file .env.annotation
+
+v4-adjudication-status:
+	python3 -m ml.data.llm_annotations status --state $(V4_ADJUDICATION_STATE) \
+		--key-file .env.annotation
+
+v4-adjudication-wait:
+	python3 -m ml.data.llm_annotations wait --state $(V4_ADJUDICATION_STATE) \
+		--key-file .env.annotation --interval-seconds 30
+
+v4-adjudication-download:
+	python3 -m ml.data.llm_annotations download --state $(V4_ADJUDICATION_STATE) \
+		--output $(V4_ADJUDICATION_OUTPUT) --key-file .env.annotation
+
+v4-adjudication-validate-output:
+	python3 -m ml.data.llm_annotations validate-adjudication-output \
+		--input $(V4_ADJUDICATION) --output $(V4_ADJUDICATION_OUTPUT) \
+		--state $(V4_ADJUDICATION_STATE)
+
+v4-adjudication-import:
+	python3 -m ml.data.llm_annotations import-adjudication \
+		--dataset $(V4_REVIEW_QUEUE) --reviews $(V4_REVIEWS) \
+		--input $(V4_ADJUDICATION) --output $(V4_ADJUDICATION_OUTPUT)
+
+v4-review-export:
+	python3 -m ml.data.export_annotations --dataset $(V4_REVIEW_QUEUE) \
+		--reviews $(V4_REVIEWS) --output $(V4_REVIEWED)
+
+v4-data-build:
+	python3 -m ml.data.build_dataset_v4 build --pool $(V4_POOL) \
+		--reviewed $(V4_REVIEWED) --selection-ledger $(V4_SELECTION_LEDGER) \
+		--output $(V4_ROOT)/dataset
 
 human-audit-prepare:
 	python3 -m ml.data.human_audit prepare \

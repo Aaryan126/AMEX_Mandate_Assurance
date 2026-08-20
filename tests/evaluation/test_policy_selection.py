@@ -9,6 +9,7 @@ from ml.features.schema import (
 )
 from ml.fusion.diagnose_remediation import shortcut_summary
 from ml.fusion.policy_selection import (
+    select_policy_configuration,
     select_policy_threshold,
     target_value,
 )
@@ -63,6 +64,24 @@ def test_threshold_selection_rejects_impossible_override_budget() -> None:
     ]
     with pytest.raises(ValueError, match="fixed rule/semantic overrides"):
         select_policy_threshold(rows, [0.1] * len(rows), 0.10)
+
+
+def test_configuration_selection_can_disable_harmful_semantic_override() -> None:
+    rows = [_row("APPROVE", contradiction=0.9)]
+    rows.extend(_row("APPROVE") for _ in range(9))
+    rows.extend([_row("STEP_UP"), _row("STEP_UP")])
+    probabilities = [0.05, *([0.05] * 9), 0.9, 0.8]
+
+    selected = select_policy_configuration(
+        rows,
+        probabilities,
+        contradiction_thresholds=(None, 0.8),
+        neutral_thresholds=(None,),
+    )
+
+    assert selected["semantic_contradiction_threshold"] is None
+    assert selected["violation_recall"] == pytest.approx(1.0)
+    assert selected["false_step_up_count"] == 0
 
 
 def test_only_declared_feature_profiles_are_accepted() -> None:

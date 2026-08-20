@@ -19,16 +19,37 @@ def apply_policy(
     semantics: list[SemanticResult],
     structured_probability: float | None = None,
     model_step_up_threshold: float | None = None,
+    semantic_contradiction_threshold: float | None = 0.8,
+    semantic_neutral_threshold: float | None = 0.6,
 ) -> PolicyDecision:
     reason_codes = [result.reason_code for result in rules if result.reason_code]
-    reason_codes.extend("REQUIRED_ATTRIBUTE_CONTRADICTED" for result in semantics if result.contradiction >= 0.8)
-    reason_codes.extend("REQUIRED_ATTRIBUTE_EVIDENCE_MISSING" for result in semantics if result.neutral >= 0.6)
+    reason_codes.extend(
+        "REQUIRED_ATTRIBUTE_CONTRADICTED"
+        for result in semantics
+        if semantic_contradiction_threshold is not None
+        and result.contradiction >= semantic_contradiction_threshold
+    )
+    reason_codes.extend(
+        "REQUIRED_ATTRIBUTE_EVIDENCE_MISSING"
+        for result in semantics
+        if semantic_neutral_threshold is not None
+        and result.neutral >= semantic_neutral_threshold
+    )
     reason_codes = list(dict.fromkeys(reason_codes))
 
     not_evaluable = any(result.status == RuleStatus.NOT_EVALUABLE for result in rules)
     commercial_failure = any(result.status == RuleStatus.FAIL for result in rules)
-    semantic_contradiction = any(result.contradiction >= 0.8 for result in semantics)
-    semantic_uncertainty = any(result.neutral >= 0.6 for result in semantics)
+    semantic_contradiction = bool(
+        semantic_contradiction_threshold is not None
+        and any(
+            result.contradiction >= semantic_contradiction_threshold
+            for result in semantics
+        )
+    )
+    semantic_uncertainty = bool(
+        semantic_neutral_threshold is not None
+        and any(result.neutral >= semantic_neutral_threshold for result in semantics)
+    )
     model_escalation = bool(
         model_step_up_threshold is not None
         and structured_probability is not None

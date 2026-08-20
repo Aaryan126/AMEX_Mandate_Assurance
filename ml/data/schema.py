@@ -170,6 +170,9 @@ class DatasetLabels(StrictModel):
         "deterministic_policy_v3",
         "llm_assisted_v3",
         "weak_policy_v3",
+        "deterministic_policy_v4",
+        "llm_assisted_v4",
+        "weak_policy_v4",
     ] = "unreviewed"
     reviewer_confidence: float | None = Field(default=None, ge=0, le=1)
     deterministic_outcome: list[str] = Field(default_factory=list)

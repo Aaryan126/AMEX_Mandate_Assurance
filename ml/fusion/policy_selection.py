@@ -32,14 +32,26 @@ def target_rows(
 
 
 def predict_policy_treatment(
-    row: dict[str, Any], probability: float, threshold: float
+    row: dict[str, Any],
+    probability: float,
+    threshold: float,
+    *,
+    semantic_contradiction_threshold: float | None = 0.8,
+    semantic_neutral_threshold: float | None = 0.6,
 ) -> str:
     if row.get("critical_hold_count", 0):
         return "HOLD"
     if (
         row.get("hard_fail_count", 0)
-        or float(row.get("semantic_contradiction", 0)) >= 0.8
-        or float(row.get("semantic_neutral", 0)) >= 0.6
+        or (
+            semantic_contradiction_threshold is not None
+            and float(row.get("semantic_contradiction", 0))
+            >= semantic_contradiction_threshold
+        )
+        or (
+            semantic_neutral_threshold is not None
+            and float(row.get("semantic_neutral", 0)) >= semantic_neutral_threshold
+        )
         or probability >= threshold
     ):
         return "STEP_UP"
@@ -47,7 +59,12 @@ def predict_policy_treatment(
 
 
 def policy_metrics(
-    rows: list[dict[str, Any]], probabilities: list[float], threshold: float
+    rows: list[dict[str, Any]],
+    probabilities: list[float],
+    threshold: float,
+    *,
+    semantic_contradiction_threshold: float | None = 0.8,
+    semantic_neutral_threshold: float | None = 0.6,
 ) -> dict[str, Any]:
     if len(rows) != len(probabilities) or not rows:
         raise ValueError("policy metrics require aligned, non-empty rows and probabilities")
@@ -55,7 +72,13 @@ def policy_metrics(
     if any(value not in {"APPROVE", "STEP_UP", "HOLD"} for value in expected):
         raise ValueError("policy metrics require a reviewed treatment for every row")
     predicted = [
-        predict_policy_treatment(row, probability, threshold)
+        predict_policy_treatment(
+            row,
+            probability,
+            threshold,
+            semantic_contradiction_threshold=semantic_contradiction_threshold,
+            semantic_neutral_threshold=semantic_neutral_threshold,
+        )
         for row, probability in zip(rows, probabilities, strict=True)
     ]
     legitimate = sum(value == "APPROVE" for value in expected)
@@ -91,6 +114,9 @@ def select_policy_threshold(
     rows: list[dict[str, Any]],
     probabilities: list[float],
     false_step_up_target: float = 0.10,
+    *,
+    semantic_contradiction_threshold: float | None = 0.8,
+    semantic_neutral_threshold: float | None = 0.6,
 ) -> dict[str, Any]:
     """Choose a validation threshold against the complete serving policy.
 
@@ -109,7 +135,13 @@ def select_policy_threshold(
         raise ValueError("threshold selection requires reviewed legitimate and violation rows")
 
     disabled_threshold = math.nextafter(1.0, math.inf)
-    fixed = policy_metrics(rows, probabilities, disabled_threshold)
+    fixed = policy_metrics(
+        rows,
+        probabilities,
+        disabled_threshold,
+        semantic_contradiction_threshold=semantic_contradiction_threshold,
+        semantic_neutral_threshold=semantic_neutral_threshold,
+    )
     budget = math.floor(legitimate * false_step_up_target)
     if fixed["false_step_up_count"] > budget:
         raise ValueError(
@@ -119,7 +151,13 @@ def select_policy_threshold(
     candidates = [disabled_threshold, *sorted(set(probabilities), reverse=True)]
     best: tuple[float, int, float, dict[str, Any]] | None = None
     for threshold in candidates:
-        metrics = policy_metrics(rows, probabilities, threshold)
+        metrics = policy_metrics(
+            rows,
+            probabilities,
+            threshold,
+            semantic_contradiction_threshold=semantic_contradiction_threshold,
+            semantic_neutral_threshold=semantic_neutral_threshold,
+        )
         if metrics["false_step_up_count"] > budget:
             continue
         rank = (
@@ -142,4 +180,49 @@ def select_policy_threshold(
         "fixed_override_false_step_up_rate": fixed["false_step_up_rate"],
         "fixed_override_false_decline_count": fixed["false_decline_count"],
         "fixed_override_false_decline_rate": fixed["false_decline_rate"],
+        "semantic_contradiction_threshold": semantic_contradiction_threshold,
+        "semantic_neutral_threshold": semantic_neutral_threshold,
+    }
+
+
+def select_policy_configuration(
+    rows: list[dict[str, Any]],
+    probabilities: list[float],
+    *,
+    false_step_up_target: float = 0.10,
+    contradiction_thresholds: tuple[float | None, ...] = (None, 0.95, 0.9, 0.85, 0.8),
+    neutral_thresholds: tuple[float | None, ...] = (None, 0.9, 0.8, 0.7, 0.6),
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    for contradiction in contradiction_thresholds:
+        for neutral in neutral_thresholds:
+            try:
+                result = select_policy_threshold(
+                    rows,
+                    probabilities,
+                    false_step_up_target,
+                    semantic_contradiction_threshold=contradiction,
+                    semantic_neutral_threshold=neutral,
+                )
+            except ValueError as exc:
+                if "fixed rule/semantic overrides" not in str(exc):
+                    raise
+                continue
+            candidates.append(result)
+    if not candidates:
+        raise ValueError("no semantic/model policy configuration satisfies the budget")
+    selected = max(
+        candidates,
+        key=lambda value: (
+            float(value["violation_recall"]),
+            -int(value["false_step_up_count"]),
+            float(value["threshold"]),
+            value["semantic_contradiction_threshold"] is None,
+            value["semantic_neutral_threshold"] is None,
+        ),
+    )
+    return {
+        **selected,
+        "selection_method": "complete-policy-configuration-v2",
+        "configuration_candidates_evaluated": len(candidates),
     }

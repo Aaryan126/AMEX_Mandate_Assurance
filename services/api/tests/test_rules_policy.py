@@ -101,3 +101,21 @@ def test_calibrated_model_score_can_step_up_but_never_model_hold() -> None:
 
     below_threshold = apply_policy([], [], structured_probability=0.79, model_step_up_threshold=0.8)
     assert below_threshold.treatment == Treatment.APPROVE
+
+
+def test_versioned_policy_can_disable_direct_semantic_overrides() -> None:
+    mandate, state = mandate_and_state()
+    rules = evaluate_rules(mandate, state, cart(refundable=False))
+    semantics = HeuristicSemanticScorer().score(
+        mandate.constraints, cart(refundable=False)
+    )
+    decision = apply_policy(
+        rules,
+        semantics,
+        structured_probability=0.2,
+        model_step_up_threshold=0.8,
+        semantic_contradiction_threshold=None,
+        semantic_neutral_threshold=None,
+    )
+    assert decision.treatment == Treatment.APPROVE
+    assert "REQUIRED_ATTRIBUTE_CONTRADICTED" not in decision.reason_codes
