@@ -2,6 +2,7 @@
 .PHONY: semantic-fast-track-complete-predictions features-fast-track train-fast-track-v2 train-fast-track-v3-no-semantic train-fast-track-v3-semantic select-fast-track-v3 replacement-holdout-semantic-inference replacement-holdout-features evaluate-fast-track-v3-replacement diagnose-step24-failure human-audit-prepare human-audit-validate human-audit-status human-audit-report human-audit-api human-audit-assisted-prepare human-audit-assisted-submit human-audit-assisted-status data-option1-v3 data-development-v3
 .PHONY: v4-pool-freeze v4-pool-semantic v4-pool-features v4-review-select v4-review-prepare v4-review-validate v4-review-submit v4-review-status v4-review-wait v4-review-download v4-review-validate-outputs v4-review-import v4-adjudication-prepare v4-adjudication-validate v4-adjudication-submit v4-adjudication-status v4-adjudication-wait v4-adjudication-download v4-adjudication-validate-output v4-adjudication-import v4-review-export v4-data-build
 .PHONY: v4-dataset-semantic v4-features-v3 v4-train-stage-a v4-evaluate-stage-a
+.PHONY: stage-b-pool-freeze stage-b-review-select stage-b-review-prepare stage-b-review-validate stage-b-review-submit stage-b-review-status stage-b-review-wait stage-b-review-download stage-b-review-validate-outputs stage-b-review-import stage-b-adjudication-prepare stage-b-adjudication-validate stage-b-adjudication-submit stage-b-adjudication-status stage-b-adjudication-wait stage-b-adjudication-download stage-b-adjudication-validate-output stage-b-adjudication-import stage-b-review-export
 
 FAST_TRACK_SEMANTIC_DATASET ?= ml/data/generated/fast-track/option1/ace-fast-track-reviewed.jsonl
 FAST_TRACK_SEMANTIC_BASE_MODEL ?= artifacts/models/semantic-domain-fast-track
@@ -50,6 +51,119 @@ V4_REVIEWED ?= $(V4_ROOT)/review/reviewed.jsonl
 V4_ADJUDICATION ?= $(V4_REVIEW_DIR)/adjudication.jsonl
 V4_ADJUDICATION_STATE ?= $(V4_REVIEW_DIR)/adjudication.state.json
 V4_ADJUDICATION_OUTPUT ?= $(V4_REVIEW_DIR)/adjudication.output.jsonl
+STAGE_B_ROOT ?= ml/data/generated/development-v4-semantic
+STAGE_B_POOL ?= $(STAGE_B_ROOT)/pool/unused-pool.jsonl
+STAGE_B_POOL_FEATURES ?= $(STAGE_B_ROOT)/pool/features-v2.jsonl
+STAGE_B_REVIEW_QUEUE ?= $(STAGE_B_ROOT)/review/review-queue.jsonl
+STAGE_B_SELECTION_LEDGER ?= $(STAGE_B_ROOT)/review/selection-ledger.jsonl
+STAGE_B_REVIEW_DIR ?= ml/data/annotations/development-v4-semantic
+STAGE_B_REVIEW_OUTPUTS ?= $(STAGE_B_REVIEW_DIR)/outputs
+STAGE_B_REVIEW_STATES ?= $(STAGE_B_REVIEW_DIR)/states
+STAGE_B_REVIEWS ?= $(STAGE_B_REVIEW_DIR)/reviews.sqlite3
+STAGE_B_REVIEWED ?= $(STAGE_B_ROOT)/review/reviewed.jsonl
+STAGE_B_ADJUDICATION ?= $(STAGE_B_REVIEW_DIR)/adjudication.jsonl
+STAGE_B_ADJUDICATION_STATE ?= $(STAGE_B_REVIEW_DIR)/adjudication.state.json
+STAGE_B_ADJUDICATION_OUTPUT ?= $(STAGE_B_REVIEW_DIR)/adjudication.output.jsonl
+
+stage-b-pool-freeze:
+	python3 -m ml.data.build_stage_b freeze-pool \
+		--stage-a-pool $(V4_POOL) \
+		--stage-a-dataset $(V4_ROOT)/dataset/ace-development-v4.jsonl \
+		--stage-a-features $(V4_POOL_FEATURES) \
+		--output-pool $(STAGE_B_POOL) \
+		--output-features $(STAGE_B_POOL_FEATURES)
+
+stage-b-review-select:
+	python3 -m ml.data.build_stage_b select-review \
+		--pool $(STAGE_B_POOL) \
+		--features $(STAGE_B_POOL_FEATURES) \
+		--model artifacts/models/development-v3-catboost/catboost-v1.cbm \
+		--model-manifest artifacts/models/development-v3-catboost/catboost-v1.manifest.json \
+		--calibrator artifacts/models/development-v3-baselines/platt-calibrator-v3.joblib \
+		--output $(STAGE_B_REVIEW_QUEUE) \
+		--ledger $(STAGE_B_SELECTION_LEDGER)
+
+stage-b-review-prepare:
+	python3 -m ml.data.llm_annotations prepare \
+		--dataset $(STAGE_B_REVIEW_QUEUE) \
+		--output $(STAGE_B_REVIEW_DIR)/requests \
+		--locale en-US --max-examples 1500 --chunk-size 500 \
+		--seed 2031 --blind-provenance --prompt-profile policy-v3
+
+stage-b-review-validate:
+	python3 -m ml.data.llm_annotations validate-prepared \
+		--input $(STAGE_B_REVIEW_DIR)/requests
+
+stage-b-review-submit:
+	python3 -m ml.data.llm_annotations submit-shards \
+		--input $(STAGE_B_REVIEW_DIR)/requests --states $(STAGE_B_REVIEW_STATES) \
+		--role a --key-file .env.annotation
+	python3 -m ml.data.llm_annotations submit-shards \
+		--input $(STAGE_B_REVIEW_DIR)/requests --states $(STAGE_B_REVIEW_STATES) \
+		--role b --key-file .env.annotation
+
+stage-b-review-status:
+	python3 -m ml.data.llm_annotations status-shards \
+		--states $(STAGE_B_REVIEW_STATES) --key-file .env.annotation
+
+stage-b-review-wait:
+	python3 -m ml.data.llm_annotations wait-shards \
+		--states $(STAGE_B_REVIEW_STATES) --key-file .env.annotation --interval-seconds 30
+
+stage-b-review-download:
+	python3 -m ml.data.llm_annotations download-shards \
+		--states $(STAGE_B_REVIEW_STATES) --outputs $(STAGE_B_REVIEW_OUTPUTS) \
+		--key-file .env.annotation
+
+stage-b-review-validate-outputs:
+	python3 -m ml.data.llm_annotations validate-outputs \
+		--input $(STAGE_B_REVIEW_DIR)/requests --outputs $(STAGE_B_REVIEW_OUTPUTS)
+
+stage-b-review-import:
+	python3 -m ml.data.llm_annotations import-shards \
+		--dataset $(STAGE_B_REVIEW_QUEUE) --reviews $(STAGE_B_REVIEWS) \
+		--input $(STAGE_B_REVIEW_DIR)/requests --outputs $(STAGE_B_REVIEW_OUTPUTS)
+
+stage-b-adjudication-prepare:
+	python3 -m ml.data.llm_annotations prepare-adjudication \
+		--dataset $(STAGE_B_REVIEW_QUEUE) --reviews $(STAGE_B_REVIEWS) \
+		--output $(STAGE_B_ADJUDICATION) --blind-provenance --prompt-profile policy-v3
+
+stage-b-adjudication-validate:
+	python3 -m ml.data.llm_annotations validate-adjudication \
+		--dataset $(STAGE_B_REVIEW_QUEUE) --reviews $(STAGE_B_REVIEWS) \
+		--input $(STAGE_B_ADJUDICATION) \
+		--manifest $(STAGE_B_REVIEW_DIR)/adjudication.manifest.json
+
+stage-b-adjudication-submit:
+	python3 -m ml.data.llm_annotations submit --input $(STAGE_B_ADJUDICATION) \
+		--state $(STAGE_B_ADJUDICATION_STATE) --key-file .env.annotation
+
+stage-b-adjudication-status:
+	python3 -m ml.data.llm_annotations status --state $(STAGE_B_ADJUDICATION_STATE) \
+		--key-file .env.annotation
+
+stage-b-adjudication-wait:
+	python3 -m ml.data.llm_annotations wait --state $(STAGE_B_ADJUDICATION_STATE) \
+		--key-file .env.annotation --interval-seconds 30
+
+stage-b-adjudication-download:
+	python3 -m ml.data.llm_annotations download --state $(STAGE_B_ADJUDICATION_STATE) \
+		--output $(STAGE_B_ADJUDICATION_OUTPUT) --key-file .env.annotation
+
+stage-b-adjudication-validate-output:
+	python3 -m ml.data.llm_annotations validate-adjudication-output \
+		--input $(STAGE_B_ADJUDICATION) --output $(STAGE_B_ADJUDICATION_OUTPUT) \
+		--state $(STAGE_B_ADJUDICATION_STATE)
+
+stage-b-adjudication-import:
+	python3 -m ml.data.llm_annotations import-adjudication \
+		--dataset $(STAGE_B_REVIEW_QUEUE) --reviews $(STAGE_B_REVIEWS) \
+		--input $(STAGE_B_ADJUDICATION) --output $(STAGE_B_ADJUDICATION_OUTPUT)
+
+stage-b-review-export:
+	python3 -m ml.data.export_annotations --dataset $(STAGE_B_REVIEW_QUEUE) \
+		--reviews $(STAGE_B_REVIEWS) --output $(STAGE_B_REVIEWED)
 
 v4-pool-freeze:
 	python3 -m ml.data.build_dataset_v4 freeze-pool \
