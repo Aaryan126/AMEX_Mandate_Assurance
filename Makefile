@@ -1,6 +1,7 @@
 .PHONY: install test test-api test-web test-e2e dev docker-up docker-down seed data-esci data-option1 data-option2 data-option2-uci data-option2-db1b data-option2-usaspending data-option2-amazon data-fast-track-option1 data-fast-track-option2 data-validate annotate-api llm-prepare llm-submit-a llm-submit-b llm-fast-track-prepare llm-fast-track-validate llm-fast-track-submit-a llm-fast-track-submit-b llm-fast-track-validate-submissions llm-fast-track-status llm-fast-track-wait llm-fast-track-download llm-fast-track-validate-outputs llm-fast-track-import llm-fast-track-prepare-adjudication llm-fast-track-validate-adjudication llm-fast-track-submit-adjudication llm-fast-track-adjudication-status llm-fast-track-adjudication-wait llm-fast-track-adjudication-download llm-fast-track-validate-adjudication-output llm-fast-track-prepare-adjudication-retry llm-fast-track-submit-adjudication-retry llm-fast-track-adjudication-retry-status llm-fast-track-adjudication-retry-wait llm-fast-track-adjudication-retry-download llm-fast-track-validate-adjudication-retry-output llm-fast-track-merge-adjudication-retry llm-fast-track-import-adjudication llm-fast-track-export-reviewed llm-fast-track-validate-reviewed semantic-domain-fast-track-prepare semantic-domain-fast-track-train semantic-fast-track-prepare semantic-fast-track-fold semantic-fast-track-finalize export-reviews features train-v2 evaluate-v2 promote-v2
 .PHONY: semantic-fast-track-complete-predictions features-fast-track train-fast-track-v2 train-fast-track-v3-no-semantic train-fast-track-v3-semantic select-fast-track-v3 replacement-holdout-semantic-inference replacement-holdout-features evaluate-fast-track-v3-replacement diagnose-step24-failure human-audit-prepare human-audit-validate human-audit-status human-audit-report human-audit-api human-audit-assisted-prepare human-audit-assisted-submit human-audit-assisted-status data-option1-v3 data-development-v3
 .PHONY: v4-pool-freeze v4-pool-semantic v4-pool-features v4-review-select v4-review-prepare v4-review-validate v4-review-submit v4-review-status v4-review-wait v4-review-download v4-review-validate-outputs v4-review-import v4-adjudication-prepare v4-adjudication-validate v4-adjudication-submit v4-adjudication-status v4-adjudication-wait v4-adjudication-download v4-adjudication-validate-output v4-adjudication-import v4-review-export v4-data-build
+.PHONY: v4-dataset-semantic v4-features-v3 v4-train-stage-a v4-evaluate-stage-a
 
 FAST_TRACK_SEMANTIC_DATASET ?= ml/data/generated/fast-track/option1/ace-fast-track-reviewed.jsonl
 FAST_TRACK_SEMANTIC_BASE_MODEL ?= artifacts/models/semantic-domain-fast-track
@@ -168,6 +169,35 @@ v4-data-build:
 	python3 -m ml.data.build_dataset_v4 build --pool $(V4_POOL) \
 		--reviewed $(V4_REVIEWED) --selection-ledger $(V4_SELECTION_LEDGER) \
 		--output $(V4_ROOT)/dataset
+
+v4-dataset-semantic:
+	PYTORCH_ENABLE_MPS_FALLBACK=1 python3 -m ml.semantic.infer_external \
+		--dataset $(V4_ROOT)/dataset/ace-development-v4.jsonl \
+		--semantic-manifest $(FAST_TRACK_SEMANTIC_OUTPUT)/manifest.json \
+		--model $(FAST_TRACK_SEMANTIC_OUTPUT)/model \
+		--output $(V4_ROOT)/dataset/semantic-predictions.jsonl --batch-size 32
+
+v4-features-v3:
+	python3 -m ml.features.build_features_v3 \
+		--dataset $(V4_ROOT)/dataset/ace-development-v4.jsonl \
+		--semantic-predictions $(V4_ROOT)/dataset/semantic-predictions.jsonl \
+		--output $(V4_ROOT)/dataset/features-v3.jsonl
+
+v4-train-stage-a:
+	python3 -m ml.tabular.train_v4 \
+		--features $(V4_ROOT)/dataset/features-v3.jsonl \
+		--output artifacts/models/development-v4-data-policy
+
+v4-evaluate-stage-a:
+	python3 -m ml.evaluation.evaluate_v4 \
+		--features $(V4_ROOT)/dataset/features-v3.jsonl \
+		--selection-ledger $(V4_SELECTION_LEDGER) \
+		--v4-artifacts artifacts/models/development-v4-data-policy \
+		--v3-model artifacts/models/development-v3-catboost/catboost-v1.cbm \
+		--v3-manifest artifacts/models/development-v3-catboost/catboost-v1.manifest.json \
+		--v3-calibrator artifacts/models/development-v3-baselines/platt-calibrator-v3.joblib \
+		--v3-baseline artifacts/models/development-v3-baselines/baseline-report.json \
+		--output artifacts/reports/development-v4-stage-a-evaluation.json
 
 human-audit-prepare:
 	python3 -m ml.data.human_audit prepare \
