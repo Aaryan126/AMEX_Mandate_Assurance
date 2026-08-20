@@ -54,5 +54,14 @@ usage, cost, and gate decision here before the next stage starts.
 - Selection ledger SHA-256:
   `26b7798675b4cb0aebc561b46a9581505e16155e5449692d2f535234b6fc36e7`.
 - Prepared and validated 2,400 requests in four 600-request shards: two pinned
-  GPT-5.4-mini shards and two pinned GPT-4.1-mini shards. No API job has been submitted
-  at this checkpoint.
+  GPT-5.4-mini shards and two pinned GPT-4.1-mini shards.
+- Submitted at 2026-08-20 16:58 +08 and checksum-validated against all four request
+  shards:
+  - GPT-5.4-mini: `batch_6a86c1be88348190bc8f5d55d82833b8` and
+    `batch_6a86c1c213748190baa1056a16132f8a`.
+  - GPT-4.1-mini: `batch_6a86c1c520848190b6143298d7ce0f9e` and
+    `batch_6a86c1c7ab1c8190892e11f427725d50`.
+- First status snapshot: two jobs `in_progress`, two jobs `validating`, zero failed
+  requests. The Batch API expiry deadline is approximately 2026-08-21 16:58 +08.
+- Execution must pause after the Stage A candidate evaluation and report its metrics to
+  the user before Stage B, Stage C, or a final holdout begins.
