@@ -6,12 +6,9 @@ services:
     environment:
       ACE_DATABASE_URL: sqlite:////data/ace.sqlite3
       ACE_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
-      ACE_MODEL_MODE: artifact
-      ACE_FUSION_MANIFEST: /workspace/artifacts/models/fusion-v2.serving.manifest.json
-      ACE_EVALUATION_REPORT: /workspace/artifacts/reports/evaluation-summary.json
+      ACE_MODEL_MODE: heuristic
     volumes:
       - ace-data:/data
-      - ./artifacts:/workspace/artifacts:ro
     ports:
       - "8000:8000"
     healthcheck:

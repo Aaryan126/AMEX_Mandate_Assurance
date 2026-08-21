@@ -1,0 +1,39 @@
+{
+  "dataset_version": "development-v3-candidate-selection-1000",
+  "model_version": "catboost-v1 + platt-calibrator-v3",
+  "status": "LOCKED_NON_PROMOTABLE",
+  "metrics": {
+    "violation_recall": 0.7992957746478874,
+    "false_step_up_rate": 0.09027777777777778,
+    "false_decline_rate": 0.0,
+    "pr_auc": 0.9666836280994382,
+    "brier_score": 0.08719374688125632,
+    "expected_calibration_error": 0.025228743103273766,
+    "supported_family_recall": 0.4146341463414634,
+    "candidate_rows": 1000.0
+  },
+  "attack_families": {
+    "cumulative_overspend": {
+      "count": 69.0,
+      "violation_recall": 1.0
+    },
+    "missing_required_evidence": {
+      "count": 100.0,
+      "violation_recall": 1.0
+    },
+    "near_budget_match": {
+      "count": 88.0,
+      "violation_recall": 0.3793103448275862
+    },
+    "untransformed": {
+      "count": 537.0,
+      "violation_recall": 0.4146341463414634
+    },
+    "unrelated_add_on": {
+      "count": 206.0,
+      "violation_recall": 1.0
+    }
+  },
+  "latency_ms": {},
+  "generated_at": "2026-08-20T06:48:58Z"
+}

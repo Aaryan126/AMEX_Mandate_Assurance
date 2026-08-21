@@ -30,6 +30,7 @@ def test_complete_valid_journey_and_audit(client: TestClient) -> None:
     )
     assert response.status_code == 200, response.text
     assert response.json()["treatment"] == "APPROVE"
+    assert response.json()["model_versions"]["policy"] == "policy-treatment-contract-v3"
 
     state = client.get(f"/v1/mandates/{mandate_id}").json()["state"]
     assert state["fulfilled_amount_minor"] == 84000
@@ -86,6 +87,42 @@ def test_step_up_can_be_approved_once(client: TestClient) -> None:
     assert resolution.status_code == 200, resolution.text
     state = client.get(f"/v1/mandates/{mandate_id}").json()["state"]
     assert state["fulfilled_amount_minor"] == 96000
+
+
+def test_step_up_can_replace_the_mandate(client: TestClient) -> None:
+    view = create_mandate(client)
+    mandate_id = view["mandate"]["mandate_id"]
+    decision = client.post(
+        "/v1/decisions/evaluate",
+        json={"mandate_id": mandate_id, "cart": cart(amount_minor=96000).model_dump(mode="json")},
+        headers={"Idempotency-Key": "evaluate-modify-001"},
+    ).json()
+    assert decision["treatment"] == "STEP_UP"
+
+    modified = client.post(
+        "/v1/mandates/interpret",
+        json={"objective_text": OBJECTIVE.replace("S$900", "S$1,000")},
+    ).json()["proposal"]
+    resolution = client.post(
+        f"/v1/decisions/{decision['decision_id']}/resolve",
+        json={"action": "MODIFY_MANDATE", "modified_proposal": modified},
+        headers={"Idempotency-Key": "resolve-modify-001"},
+    )
+    assert resolution.status_code == 200, resolution.text
+    new_mandate_id = resolution.json()["new_mandate_id"]
+    assert new_mandate_id == modified["mandate_id"]
+    assert client.get(f"/v1/mandates/{mandate_id}").json()["state"]["status"] == "superseded"
+    assert client.get(f"/v1/mandates/{new_mandate_id}").json()["state"]["status"] == "active"
+
+
+def test_evaluation_summary_reports_locked_development_v3(client: TestClient) -> None:
+    response = client.get("/v1/evaluation/summary")
+    assert response.status_code == 200, response.text
+    summary = response.json()
+    assert summary["dataset_version"] == "development-v3-candidate-selection-1000"
+    assert summary["status"] == "LOCKED_NON_PROMOTABLE"
+    assert summary["metrics"]["pr_auc"] == 0.9666836280994382
+    assert summary["metrics"]["violation_recall"] == 0.7992957746478874
 
 
 def test_validation_errors_are_versioned(client: TestClient) -> None:

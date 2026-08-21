@@ -1,8 +1,8 @@
-import type { Decision } from "@/lib/types";
+import type { Decision, ResolutionAction } from "@/lib/types";
 
 type Props = {
   decision: Decision | null;
-  onResolve: (action: "APPROVE_ONCE" | "DECLINE") => void;
+  onResolve: (action: ResolutionAction) => void;
   busy: boolean;
 };
 
@@ -65,12 +65,22 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
             </div>
           ))}
         </div>
+        <div className="runtime-contract">
+          <span>Policy <code>{decision.model_versions.policy}</code></span>
+          <span>
+            Runtime scorer{" "}
+            <code>{decision.model_versions.catboost ?? "deterministic fallback"}</code>
+          </span>
+        </div>
       </details>
 
       {decision.treatment === "STEP_UP" && (
         <div className="button-row resolution-actions">
           <button className="button confirm" onClick={() => onResolve("APPROVE_ONCE")} disabled={busy}>
             Approve once
+          </button>
+          <button className="button secondary" onClick={() => onResolve("MODIFY_MANDATE")} disabled={busy}>
+            Modify mandate
           </button>
           <button className="button secondary" onClick={() => onResolve("DECLINE")} disabled={busy}>
             Decline
@@ -80,4 +90,3 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
     </section>
   );
 }
-

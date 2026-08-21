@@ -5,6 +5,8 @@ import type {
   EvaluationSummary,
   MandateProposal,
   MandateView,
+  ResolutionAction,
+  ResolutionResponse,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -93,6 +95,9 @@ export const api = {
       body: JSON.stringify({ proposal, confirmed: true }),
     });
   },
+  mandate(mandateId: string) {
+    return request<MandateView>(`/v1/mandates/${encodeURIComponent(mandateId)}`);
+  },
   evaluate(mandateId: string, cart: CartEvidence) {
     return request<Decision>("/v1/decisions/evaluate", {
       method: "POST",
@@ -100,11 +105,11 @@ export const api = {
       body: JSON.stringify({ mandate_id: mandateId, cart }),
     });
   },
-  resolve(decisionId: string, action: "APPROVE_ONCE" | "DECLINE") {
-    return request(`/v1/decisions/${decisionId}/resolve`, {
+  resolve(decisionId: string, action: ResolutionAction, modifiedProposal?: MandateProposal) {
+    return request<ResolutionResponse>(`/v1/decisions/${decisionId}/resolve`, {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey("resolve") },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, modified_proposal: modifiedProposal }),
     });
   },
   audit(sessionId: string) {

@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from .treatment_contract import POLICY_VERSION
+
 
 def _boolean_env(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
@@ -21,7 +23,7 @@ class Settings:
     )
     model_mode: str = os.getenv("ACE_MODEL_MODE", "heuristic")
     schema_version: str = "1.0"
-    policy_version: str = "policy-v2-no-model-hold"
+    policy_version: str = POLICY_VERSION
     feature_version: str = "features-v2"
     annotation_enabled: bool = _boolean_env("ACE_ANNOTATION_ENABLED")
     annotation_dataset: str = os.getenv(

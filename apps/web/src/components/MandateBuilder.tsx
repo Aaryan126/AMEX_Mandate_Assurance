@@ -9,7 +9,39 @@ type Props = {
   proposal: MandateProposal | null;
   warnings: string[];
   busy: boolean;
+  confirmLabel?: string;
+  modificationNotice?: string | null;
 };
+
+function formatDate(value: unknown) {
+  if (typeof value !== "string") return String(value);
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.valueOf())) return value;
+  return new Intl.DateTimeFormat("en-SG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+export function formatConstraintValue(constraint: MandateProposal["constraints"][number]) {
+  if (constraint.amount_minor != null) {
+    return `${constraint.currency} ${(constraint.amount_minor / 100).toLocaleString("en-SG")}`;
+  }
+  if (Array.isArray(constraint.value)) return constraint.value.join(", ");
+  if (constraint.value && typeof constraint.value === "object") {
+    const value = constraint.value as Record<string, unknown>;
+    if (constraint.type === "route") return `${String(value.origin)} → ${String(value.destination)}`;
+    if (constraint.type === "travel_dates") {
+      return `${formatDate(value.outbound_date)} → ${formatDate(value.return_date)}`;
+    }
+    return Object.entries(value)
+      .map(([key, item]) => `${key.replaceAll("_", " ")}: ${String(item)}`)
+      .join(", ");
+  }
+  return String(constraint.value ?? constraint.operator);
+}
 
 export function MandateBuilder({
   objective,
@@ -19,6 +51,8 @@ export function MandateBuilder({
   proposal,
   warnings,
   busy,
+  confirmLabel = "Confirm & authenticate",
+  modificationNotice = null,
 }: Props) {
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -52,11 +86,17 @@ export function MandateBuilder({
           </button>
           {proposal && (
             <button className="button confirm" type="button" onClick={onConfirm} disabled={busy}>
-              Confirm & authenticate
+              {confirmLabel}
             </button>
           )}
         </div>
       </form>
+
+      {modificationNotice && (
+        <div className="notice modification" role="status">
+          {modificationNotice}
+        </div>
+      )}
 
       {warnings.length > 0 && (
         <div className="notice warning" role="status">
@@ -71,13 +111,7 @@ export function MandateBuilder({
           {proposal.constraints.map((constraint) => (
             <article className="constraint" key={constraint.constraint_id}>
               <span>{constraint.type.replaceAll("_", " ")}</span>
-              <strong>
-                {constraint.amount_minor != null
-                  ? `${constraint.currency} ${(constraint.amount_minor / 100).toLocaleString()}`
-                  : Array.isArray(constraint.value)
-                    ? constraint.value.join(", ")
-                    : String(constraint.value ?? constraint.operator)}
-              </strong>
+              <strong>{formatConstraintValue(constraint)}</strong>
             </article>
           ))}
         </div>

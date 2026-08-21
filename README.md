@@ -164,10 +164,12 @@ an uncalibrated score as calibrated.
 - A responsive Next.js Card Member and reviewer workspace.
 - Mandate interpretation, review, simulated Ed25519 signing, confirmation, revocation, and immutable
   versioning.
-- Six reproducible agent-transaction scenarios.
+- Six reproducible, isolated agent-transaction scenarios with guided progress and one-click reset.
 - Trusted-cart evidence display, decision reasons, expandable rule evidence, step-up resolution, and an
   append-only reviewer timeline.
-- A frozen benchmark dashboard showing model quality, calibration, latency, and attack-family coverage.
+- Card Member resolution through approve-once, mandate replacement, or decline.
+- A development-v3 evidence dashboard showing exact model quality, calibration, gate results, and the
+  locked non-promotable status.
 - OpenAPI-generated TypeScript contracts to detect frontend/backend schema drift.
 
 ### Decision service
@@ -213,20 +215,22 @@ The default UI uses the mandate described above. Each scenario has a determinist
 | Scenario | Proposed outcome | Expected treatment |
 |---|---|---|
 | Valid itinerary | Refundable, economy, nonstop, correct dates, S$840 | `APPROVE` |
-| Hard violation | Matching itinerary at S$960 | `STEP_UP` |
+| Budget excess | Matching itinerary at S$960 | `STEP_UP` |
 | Semantic substitution | S$780 fare explicitly marked non-refundable | `STEP_UP` |
 | Injected outcome | Flight plus an unrelated gift-card subscription | `HOLD` |
 | Stateful violation | Two individually plausible S$500 fulfillments against S$900 total | First approves; second `HOLD` |
 | Uncertain evidence | S$810 fare with no reliable refundability evidence | `STEP_UP` |
 
-Create a fresh mandate before demonstrating each independent scenario so earlier approved fulfillments do
-not intentionally affect later stateful checks.
+The UI automatically creates an isolated copy of the confirmed mandate for each scenario, so an earlier
+approval cannot change a later example. The stateful scenario deliberately keeps both S$500 transactions
+inside one isolated session and displays the first approval followed by the second `HOLD`.
 
 ## Repository layout
 
 ```text
 apps/web/                 Next.js UI, component tests, and Playwright journeys
 services/api/             FastAPI service, contracts, rules, policy, persistence, and migrations
+services/api/data/        Tracked development-v3 presentation summary consumed by the demo API
 ml/data/                  Canonical schema, public-source adapters, builders, reviews, and counterfactuals
 ml/features/              Versioned structured feature computation
 ml/semantic/              NLI pair construction, calibration, adapter, and artifact bootstrap
@@ -234,7 +238,7 @@ ml/tabular/               CatBoost training and TabM inclusion gate
 ml/fusion/                Out-of-fold stacking and held-out calibration
 ml/evaluation/            Metrics and frozen benchmark reporting
 artifacts/manifests/      Version and policy metadata committed to source
-artifacts/reports/        Generated benchmark summary consumed by the UI
+artifacts/reports/        Gitignored generated research and evaluation reports
 tests/                    Dataset, leakage, feature-parity, semantic, calibration, and metric tests
 docs/                     Threat model and presentation walkthrough
 ```

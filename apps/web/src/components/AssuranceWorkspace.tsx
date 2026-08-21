@@ -9,12 +9,13 @@ import type {
   EvaluationSummary,
   MandateProposal,
   MandateView,
+  ResolutionAction,
 } from "@/lib/types";
 import { AuditTimeline } from "./AuditTimeline";
 import { DecisionPanel } from "./DecisionPanel";
 import { EvaluationDashboard } from "./EvaluationDashboard";
 import { MandateBuilder } from "./MandateBuilder";
-import { ScenarioPicker } from "./ScenarioPicker";
+import { ScenarioPicker, type ScenarioStep } from "./ScenarioPicker";
 
 export const DEFAULT_OBJECTIVE =
   "Book a refundable economy flight from Singapore to Tokyo, departing 7 September and returning 10 September, nonstop if available, total fare under S$900. Do not purchase add-ons.";
@@ -30,6 +31,10 @@ export function AssuranceWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [resolution, setResolution] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<EvaluationSummary | null>(null);
+  const [activeScenario, setActiveScenario] = useState<ScenarioKey | null>(null);
+  const [completedScenarios, setCompletedScenarios] = useState<ScenarioKey[]>([]);
+  const [scenarioSteps, setScenarioSteps] = useState<ScenarioStep[]>([]);
+  const [modifyingDecisionId, setModifyingDecisionId] = useState<string | null>(null);
 
   async function refreshAudit(mandateId: string) {
     const timeline = await api.audit(mandateId);
@@ -43,6 +48,11 @@ export function AssuranceWorkspace() {
     setDecision(null);
     setEvents([]);
     setResolution(null);
+    setScenarioSteps([]);
+    if (!modifyingDecisionId) {
+      setActiveScenario(null);
+      setCompletedScenarios([]);
+    }
     try {
       const response = await api.interpret(objective);
       setProposal({ ...response.proposal, max_fulfillments: 2 });
@@ -59,6 +69,17 @@ export function AssuranceWorkspace() {
     setBusy(true);
     setError(null);
     try {
+      if (modifyingDecisionId) {
+        const result = await api.resolve(modifyingDecisionId, "MODIFY_MANDATE", proposal);
+        if (!result.new_mandate_id) throw new Error("The modified mandate was not created.");
+        const view = await api.mandate(result.new_mandate_id);
+        setMandate(view);
+        setDecision(null);
+        setModifyingDecisionId(null);
+        setResolution("Modified mandate confirmed and authenticated.");
+        await refreshAudit(view.mandate.mandate_id);
+        return;
+      }
       const view = await api.confirm(proposal);
       setMandate(view);
       await refreshAudit(view.mandate.mandate_id);
@@ -70,21 +91,43 @@ export function AssuranceWorkspace() {
   }
 
   async function handleRun(scenario: ScenarioKey) {
-    if (!mandate) return;
+    if (!mandate || !proposal) return;
     setBusy(true);
     setError(null);
     setResolution(null);
+    setActiveScenario(scenario);
+    setScenarioSteps([]);
     try {
+      const suffix = globalThis.crypto?.randomUUID?.().replaceAll("-", "").slice(0, 12) ?? `${Date.now()}`;
+      const isolatedProposal: MandateProposal = {
+        ...proposal,
+        mandate_id: `mdt_demo_${suffix}`,
+        mandate_version: 1,
+      };
+      const scenarioMandate = await api.confirm(isolatedProposal);
+      setMandate(scenarioMandate);
+
       let result: Decision;
       if (scenario === "stateful") {
-        const first = await api.evaluate(mandate.mandate.mandate_id, scenarioCart("stateful", 1));
+        const firstCart = scenarioCart("stateful", 1);
+        const first = await api.evaluate(scenarioMandate.mandate.mandate_id, firstCart);
         if (first.treatment !== "APPROVE") throw new Error("The first stateful fulfillment did not approve.");
-        result = await api.evaluate(mandate.mandate.mandate_id, scenarioCart("stateful", 2));
+        const secondCart = scenarioCart("stateful", 2);
+        result = await api.evaluate(scenarioMandate.mandate.mandate_id, secondCart);
+        setScenarioSteps([
+          { label: "First fulfillment", amountMinor: firstCart.total_amount_minor, treatment: first.treatment },
+          { label: "Second fulfillment", amountMinor: secondCart.total_amount_minor, treatment: result.treatment },
+        ]);
       } else {
-        result = await api.evaluate(mandate.mandate.mandate_id, scenarioCart(scenario));
+        const scenarioEvidence = scenarioCart(scenario);
+        result = await api.evaluate(scenarioMandate.mandate.mandate_id, scenarioEvidence);
+        setScenarioSteps([
+          { label: "Proposed transaction", amountMinor: scenarioEvidence.total_amount_minor, treatment: result.treatment },
+        ]);
       }
       setDecision(result);
-      await refreshAudit(mandate.mandate.mandate_id);
+      setCompletedScenarios((current) => current.includes(scenario) ? current : [...current, scenario]);
+      await refreshAudit(scenarioMandate.mandate.mandate_id);
     } catch (value) {
       setError(value instanceof Error ? value.message : "Decision evaluation failed.");
     } finally {
@@ -92,8 +135,18 @@ export function AssuranceWorkspace() {
     }
   }
 
-  async function handleResolve(action: "APPROVE_ONCE" | "DECLINE") {
+  async function handleResolve(action: ResolutionAction) {
     if (!decision || !mandate) return;
+    if (action === "MODIFY_MANDATE") {
+      setModifyingDecisionId(decision.decision_id);
+      setProposal(null);
+      setMandate(null);
+      setDecision(null);
+      setEvents([]);
+      setScenarioSteps([]);
+      setResolution("Revise the objective, interpret it again, then confirm the modified mandate.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -119,6 +172,23 @@ export function AssuranceWorkspace() {
     }
   }
 
+  function handleReset() {
+    setObjective(DEFAULT_OBJECTIVE);
+    setProposal(null);
+    setMandate(null);
+    setWarnings([]);
+    setDecision(null);
+    setEvents([]);
+    setBusy(false);
+    setError(null);
+    setResolution(null);
+    setEvaluation(null);
+    setActiveScenario(null);
+    setCompletedScenarios([]);
+    setScenarioSteps([]);
+    setModifyingDecisionId(null);
+  }
+
   return (
     <main>
       <header className="hero">
@@ -128,7 +198,7 @@ export function AssuranceWorkspace() {
             <strong>ACE</strong>
             <span>Mandate Assurance</span>
           </div>
-          <span className="prototype-label">Simulated prototype</span>
+          <span className="prototype-label">Development v3 · simulated prototype</span>
         </nav>
         <div className="hero-content">
           <div>
@@ -160,8 +230,18 @@ export function AssuranceWorkspace() {
           proposal={proposal}
           warnings={warnings}
           busy={busy}
+          confirmLabel={modifyingDecisionId ? "Confirm modified mandate" : "Confirm & authenticate"}
+          modificationNotice={modifyingDecisionId ? "You are replacing the stepped-up mandate. Update the objective before confirming." : null}
         />
-        <ScenarioPicker onRun={handleRun} busy={busy} disabled={!mandate} />
+        <ScenarioPicker
+          onRun={handleRun}
+          busy={busy}
+          disabled={!mandate}
+          activeScenario={activeScenario}
+          completedScenarios={completedScenarios}
+          steps={scenarioSteps}
+          onReset={handleReset}
+        />
         <DecisionPanel decision={decision} onResolve={handleResolve} busy={busy} />
         <AuditTimeline events={events} />
         <EvaluationDashboard summary={evaluation} onLoad={handleLoadEvaluation} busy={busy} />

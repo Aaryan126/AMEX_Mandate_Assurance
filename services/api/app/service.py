@@ -499,15 +499,16 @@ def get_audit_timeline(session: Session, session_id: str) -> AuditTimeline:
 
 
 def evaluation_summary() -> EvaluationSummary:
-    report_path = Path(os.getenv("ACE_EVALUATION_REPORT", "artifacts/reports/evaluation-summary.json"))
+    default_report = Path(__file__).resolve().parent.parent / "data" / "development-v3-evaluation-summary.json"
+    report_path = Path(os.getenv("ACE_EVALUATION_REPORT", str(default_report)))
     if report_path.exists():
         return EvaluationSummary.model_validate_json(report_path.read_text())
     return EvaluationSummary(
-        dataset_version="synthetic-v1",
-        model_version="not-trained",
+        dataset_version="development-v3-candidate-selection-1000",
+        model_version="catboost-v1 + platt-calibrator-v3",
         status="not_run",
         metrics={},
         attack_families={},
-        latency_ms={"p50": 0.0, "p95": 0.0},
-        generated_at=datetime(2026, 8, 15, tzinfo=UTC),
+        latency_ms={},
+        generated_at=datetime(2026, 8, 20, tzinfo=UTC),
     )
