@@ -14,6 +14,11 @@ and authorization capabilities described publicly for Agentic Commerce Experienc
 > This is a local prototype. It uses synthetic identities, signatures, merchants, carts, and transactions.
 > It does not connect to American Express systems, process real payments, or use real Card Member data.
 
+> [!NOTE]
+> The public project baseline is **development v3**. The architecture, data statements, metrics, and demo
+> claims in this README refer only to that locked version. A future model may replace it only after passing
+> every declared development, family-recall, calibration, friction, and independent-evaluation gate.
+
 ## The problem
 
 Agentic commerce introduces a risk that ordinary identity and payment controls do not fully address: an
@@ -381,45 +386,21 @@ then `prepare-adjudication` for disagreements. Before any production claim, manu
 sample and have a human resolve every audited mismatch. LLM consensus is useful training supervision but
 is not a substitute for a human-owned golden set.
 
-### Required genuine human audit
+### Human validation still required for production claims
 
-The remediation pipeline prepares a deterministic, stratified 400-row audit across development and the
-consumed replacement holdout. It balances source-label provenance, counterfactual families, and real
-versus hybrid-grounded evidence. The reviewer queue hides all original labels, attack/transformation
-metadata, parent identity, and model predictions; a private checksum-bound ledger preserves them for the
-final agreement report. Deterministic arithmetic checks are shown so people can focus on semantic fit.
+Development v3 includes an LLM-assisted audit with explicit provenance; it is not represented as expert
+human ground truth. Before making a production-readiness claim, independently review a stratified,
+blinded sample spanning label provenance, counterfactual families, and real versus hybrid-grounded
+evidence. Reviewers must not see source labels, transformation metadata, model predictions, or one
+another's decisions. Disagreements require independent adjudication, and the resulting agreement report
+must remain checksum-bound to the reviewed rows.
 
-```bash
-make human-audit-prepare
-make human-audit-validate
-
-# Terminal 1: local-only review API
-make human-audit-api
-
-# Terminal 2: reviewer UI
-npm --prefix apps/web run dev
-```
-
-Open <http://localhost:3000/annotate>. Two different people must each review all 400 rows using stable IDs
-that start with `human-`. They should work independently. A third human then enables **Adjudication queue**
-and resolves only disagreements. The complete label definitions and boundary cases are in
-[`docs/human-audit-reviewer-guide.md`](docs/human-audit-reviewer-guide.md).
-
-```bash
-make human-audit-status
-make human-audit-report
-```
-
-The report command refuses incomplete queues, non-human reviewer IDs, rows without exactly two independent
-reviews, unresolved disagreements, and any deterministic-treatment mismatch. No OpenAI API is used for
-this audit. Generated queues, the private ledger, and review SQLite database remain gitignored.
-
-This genuine human audit has **not** been completed. To keep provisional model development moving, the
-same 400-row blinded queue was instead processed by pinned GPT-5.4 mini and GPT-4.1 mini reviewers. They
+This genuine human audit has **not** been completed. To keep provisional v3 development moving, a
+400-row blinded queue was instead processed by pinned GPT-5.4 mini and GPT-4.1 mini reviewers. They
 agreed on 194 rows, and pinned GPT-5.4 adjudicated all 206 disagreements. The measured Batch API cost was
 approximately US$2.62. The result is explicitly recorded as `llm_assisted_not_human`; it contains zero
 genuine human-reviewed rows and is not eligible to support a production or promotion claim. Only 81 of
-these audited labels entered development-v3 after relationship and consumed-holdout exclusions.
+these audited labels entered development-v3 after relationship and data-isolation exclusions.
 
 After review is complete, freeze labels into a new immutable JSONL rather than mutating the source corpus:
 
@@ -430,9 +411,7 @@ make export-reviews \
   OUTPUT=ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl
 ```
 
-## Train and reproduce the model research pipelines
-
-### Frozen semantic model and v2 workflow
+## Reproduce the development-v3 baseline
 
 The 24 GB M4 Pro can run the English NLI fine-tune through PyTorch MPS with dynamic padding and activation
 checkpointing. A local throughput benchmark found batch size 16 stable at roughly 6.97 examples/second and
@@ -442,164 +421,43 @@ memory is not the bottleneck. A CUDA host remains the faster fallback, not a pre
 The selected English base is `MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli` at commit
 `6f5cf0a2b59cabb106aca4c287eed12e357e90eb`. It starts from real MNLI, FEVER-NLI, and ANLI data,
 was domain-adapted on an approximately 10,000-row Option 2 public-data hybrid sample, and was then
-fine-tuned and validated with grouped folds on the reviewed English Option 1 fast-track corpus. In the
+fine-tuned and validated with grouped folds on the reviewed English Option 1 corpus. In the
 latest development-v3 run this semantic artifact was frozen and used only for inference. CatBoost and its
 calibrator are trained only on resulting canonical Option 1 feature rows; there is no separate hidden
 training dataset.
 
+The locked v3 baseline is split into independently checksum-bound artifacts:
+
+| Artifact | Location |
+|---|---|
+| Development dataset and role manifest | `ml/data/generated/development-v3/` |
+| Frozen semantic model | Checksum recorded in the v3 checkpoint |
+| Semantic predictions and canonical features | `ml/data/generated/development-v3/` |
+| CatBoost model and manifest | `artifacts/models/development-v3-catboost/` |
+| Platt calibrator, policy result, and candidate lock | `artifacts/models/development-v3-baselines/` |
+
+Generated datasets and model weights are intentionally gitignored. Their immutable hashes, recovery archive,
+and verification results are recorded in
+[`docs/development-v3-checkpoint.md`](docs/development-v3-checkpoint.md). Rebuild the public-data source and
+relationship-isolated development roles with:
+
 ```bash
-# On either the Mac or a GPU host
 python3 -m pip install -e 'services/api[ml,semantic]'
-
-# Download an immutable base model snapshot. A mutable branch name is rejected.
-python3 -m ml.semantic.bootstrap \
-  --repository MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli \
-  --revision 6f5cf0a2b59cabb106aca4c287eed12e357e90eb \
-  --target artifacts/base-models/english-nli
-
-# Produces grouped OOF predictions for train and held-out predictions elsewhere.
-python3 -m ml.semantic.train_multilingual \
-  --dataset ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl \
-  --base-model artifacts/base-models/english-nli \
-  --output artifacts/models/semantic-v2 \
-  --batch-size 16 \
-  --gradient-accumulation-steps 1 \
-  --gradient-checkpointing \
-  --prediction-batch-size 32
-
-# Refuses to write a partial feature dataset if any semantic prediction is missing.
-make features \
-  DATASET=ml/data/generated/option1-en/ace-esci-en-hybrid-reviewed.jsonl \
-  SEMANTIC_PREDICTIONS=artifacts/models/semantic-v2/semantic-predictions.jsonl \
-  FEATURE_DATASET=ml/data/generated/features-v2.jsonl
-
-make train-v2 FEATURE_DATASET=ml/data/generated/features-v2.jsonl
-make evaluate-v2 FEATURE_DATASET=ml/data/generated/features-v2.jsonl
-
-# Creates fusion-v2.serving.manifest.json only when the report is hash-bound and passed.
-make promote-v2
+make data-option1-v3
+make data-development-v3
+make test
 ```
 
-The fast-track workflow runs the same semantic trainer through explicit restart boundaries. After the
-Option 2 domain-adapted base checkpoint exists, `make semantic-fast-track-prepare` writes a
-`training-state.json` that binds the reviewed dataset, immutable base-model tree, hyperparameters,
-grouped fold assignment, and expected holdout keys. Each approved fold is then run separately:
-
-```bash
-make semantic-fast-track-fold FOLD=0
-make semantic-fast-track-fold FOLD=1
-# Continue through FOLD=4 only at the corresponding approval gates.
-make semantic-fast-track-finalize
-make semantic-fast-track-complete-predictions
-make features-fast-track
-make train-fast-track-v2
-# Run only once after the experiment is frozen; this does not promote the model.
-make evaluate-fast-track-v2
-```
-
-The completion pass does not train the model again. It uses the checksum-bound final model and calibrated
-temperature to score semantic constraints that intentionally have no supervised label, then atomically merges
-those inference-only rows with the cross-fit and held-out predictions. `features-fast-track` consumes that
-complete artifact, so unreviewed rows keep `label=null` and cannot enter supervised fitting, while every cart
-still receives semantic inputs under the same `features-v2` contract used by the live API.
-
-A fold writes its holdout logits to an atomic, checksum-bound JSONL checkpoint before being marked
-complete. Re-running a completed fold verifies and skips it. A failed or interrupted fold retains its
-attempt state and can be retried, while any dataset, base model, configuration, fold-assignment, or
-checkpoint change is rejected. Final training refuses to start until every grouped fold checkpoint is
-complete.
-
-The fast-track evaluator writes
-`artifacts/reports/fast-track-v2-golden-evaluation.json`. It checks every dataset/model binding before
-opening the golden split and compares rules only, semantic only, CatBoost, the uncalibrated core stack,
-and the full calibrated policy. It also reports fixed-false-positive recall, policy-level treatment
-rates, attack/cohort slices, latency, and line-item-count sensitivity. Missing trained challengers are
-reported as not run; evaluation never silently trains them or substitutes an invalid inference-time
-feature-zeroing experiment. A failed report cannot create a serving manifest.
-
-After a failed gate, `make diagnose-fast-track-remediation` scores only train/validation/calibration
-data and leaves the golden split out of tuning. The remediation candidates are declared explicitly:
-`train-fast-track-v3-no-semantic` removes both semantic inputs and `line_item_count`, while
-`train-fast-track-v3-semantic` retains semantic inputs but removes `line_item_count`. Both use the
-reviewed policy-intervention target, including ambiguous rows labeled STEP_UP, and select their
-threshold against the complete policy so rule and semantic overrides consume the same false-step-up
-budget. These targets start local training and therefore remain separate approval-gated steps.
-
-Because the original golden split was opened during the failed evaluation, it is now a regression set,
-not an unbiased promotion set. The replacement holdout is drawn deterministically from previously unused
-Option 1 training groups, excludes every prior example, group, parent, and source record, strips all source
-labels, and changes the split to `golden`. Its reviewer prompts expose the mandate, cart, and evidence
-origin only; transformation names and field-origin metadata are withheld so reviewers cannot infer the
-generator's intended class.
-
-The local, non-billable preparation can be reproduced and checked with:
-
-```bash
-make replacement-holdout-freeze
-make replacement-holdout-prepare-reviews
-make replacement-holdout-validate-reviews
-```
-
-The frozen data lives at
-`ml/data/generated/fast-track/replacement-holdout/replacement-holdout.blinded.jsonl`; its review queue and
-eight request shards live under `ml/data/annotations/replacement-holdout/`. Re-running the freeze verifies
-the existing checksums and skips it; a partial or different lock is rejected. The two commands below create
-billable OpenAI Batch jobs and must be run only after an explicit approval checkpoint:
-
-```bash
-make replacement-holdout-submit-a
-make replacement-holdout-submit-b
-```
-
-Reviewer A uses the pinned `gpt-5.4-mini-2026-03-17` snapshot and reviewer B uses
-`gpt-4.1-mini-2025-04-14`. Disagreements are adjudicated later by pinned GPT-5.4 in a separate approval
-step. No remediation candidate may train against this replacement holdout, and the holdout is opened only
-once for the final promotion evaluation.
-
-Downloaded reviewer outputs must pass exact ID coverage, completed-response, strict-schema, and checksum
-validation before import. If an otherwise successful Batch contains an internally incomplete response,
-the pipeline stops before creating the review database. The recovery path prepares only the invalid rows
-with a larger output-token ceiling; submitting that retry remains a separate billable approval gate:
-
-```bash
-make replacement-holdout-prepare-review-retry       # local and non-billable
-make replacement-holdout-submit-review-retry        # billable; explicit approval required
-make replacement-holdout-review-retry-status
-make replacement-holdout-review-retry-download
-make replacement-holdout-validate-review-retry-output
-make replacement-holdout-merge-review-retry
-make replacement-holdout-validate-merged-outputs
-make replacement-holdout-import-merged
-```
-
-The merge writes a separate `validated-outputs/` directory and does not modify the originally downloaded
-Batch files. It verifies that retry requests differ only by their increased token limit, replaces exactly
-the retried IDs, and revalidates all 8,000 reviewer outputs before atomic import.
-
-The existing v2 evaluator writes `artifacts/reports/evaluation-summary.json`. Manifests bind the source
-dataset, semantic predictions, feature order, artifacts, calibration procedure, random seed, threshold,
-and every checksum. The v2 artifact loader can load `fusion-v2.manifest.json`, verify the CatBoost and JSON
-fusion artifacts, and expose the stacker/calibrator versions in every decision. This compatibility path is
-not evidence that the latest v3 candidate has been promoted.
-
-Training never marks its own output as serving-approved. The explicit promotion command verifies the
-golden-gate status, dataset hash, artifact-manifest hash, and no-model-HOLD invariant. Docker looks only
-for the promoted serving manifest; without it, the API uses the documented heuristic fallback. To run the
-full artifact path in a semantic-enabled Python environment:
-
-```bash
-ACE_MODEL_MODE=artifact \
-ACE_SEMANTIC_ARTIFACT=artifacts/models/semantic-v2 \
-ACE_FUSION_MANIFEST=artifacts/models/fusion-v2.serving.manifest.json \
-uvicorn app.main:app --app-dir services/api --port 8000
-```
-
-The API checks that the active semantic version is one of the versions bound into the fusion manifest and
-returns a fail-safe service error on mismatch.
+The v3 training contract uses 4,000 `train_fit` rows, 1,000 calibration rows, 1,000 policy-tuning rows,
+and a 1,000-row candidate-selection role. Relationship groups cannot cross these roles. Training never
+marks its own output as serving-approved, and the locked v3 candidate did not create a serving manifest
+because it missed the recall gates. The default Docker demo therefore exercises the v3 policy contract
+through the deterministic semantic/structured fallback; the CatBoost results below remain offline model
+evidence rather than a production-serving claim.
 
 ### Current development-v3 result
 
-The v3 remediation run rebuilt Option 1 with `grounded-counterfactual-v3`, selected 7,000
+The v3 development run rebuilt Option 1 with `grounded-counterfactual-v3`, selected 7,000
 relationship-isolated rows, and reused the completed English semantic model as a frozen feature generator.
 It trained CatBoost only on `train_fit`, fitted Platt calibration only on `calibration`, selected the
 `STEP_UP` threshold only on `policy_tuning`, and reported architecture metrics only on
@@ -617,11 +475,8 @@ On the 1,000-row candidate-selection role, calibrated CatBoost produced:
 | False-decline rate | 0% | At most 2%; passed |
 | Adequately supported untransformed-family recall | 41.46% | At least 80%; failed |
 
-The candidate is therefore `LOCKED_NON_PROMOTABLE`. Steps that would freeze, review, or open another final
-holdout were intentionally not run. The 0.96668 development PR-AUC is not directly comparable with the
-earlier 0.5292 result on the consumed replacement holdout because the datasets, label policy, and evaluation
-roles differ. It demonstrates that the model learns the v3 development target; it does not demonstrate
-production generalization.
+The candidate is therefore `LOCKED_NON_PROMOTABLE`. The 0.96668 development PR-AUC demonstrates that the
+model learns the v3 development target; it does not demonstrate production generalization.
 
 For a fast pipeline smoke test that does not claim real-world validity, `make evaluate` still builds the
 small 300-row synthetic fixture. It exists to catch code regressions only and should not be promoted.
@@ -645,7 +500,7 @@ cart-state, and treatment fields remain synthetic. No real Amex Card Member or t
 Option 2 is built only after its upstream files have been converted to each adapter's streaming
 `records.jsonl` contract and locked in `ml/data/raw/option2/source-lock.json`. Run `make data-option2` to
 produce the fixed 150k corpus. Adding a source changes an adapter and composition manifest, not the model's
-`features-v2` definitions.
+canonical feature schema.
 
 ```bash
 make data-option2-uci
