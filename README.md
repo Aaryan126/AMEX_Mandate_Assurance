@@ -18,6 +18,8 @@ and authorization capabilities described publicly for Agentic Commerce Experienc
 > The public project baseline is **development v3**. The architecture, data statements, metrics, and demo
 > claims in this README refer only to that locked version. A future model may replace it only after passing
 > every declared development, family-recall, calibration, friction, and independent-evaluation gate.
+> The later Stage A, B, and C remediation candidates did not pass their declared semantic-recall gates,
+> so they did not replace v3 or change the live decision architecture.
 
 ## The problem
 
@@ -82,10 +84,12 @@ flowchart TD
         RULES[Deterministic rules]
         NLI[Semantic NLI scorer]
         FEATURES[Stateful feature computation]
-        CAT[CatBoost risk model]
+        CAT[CatBoost risk model<br/>promotion-gated candidate]
         CAL[Probability calibration]
         POLICY[Versioned policy]
         RULES --> POLICY
+        RULES --> FEATURES
+        NLI --> POLICY
         NLI --> FEATURES
         FEATURES --> CAT
         CAT --> CAL
@@ -132,11 +136,12 @@ contract version. It then evaluates three complementary branches:
 | Semantic inference | Whether trusted evidence entails, contradicts, or fails to establish a required attribute | Deterministic offline scorer plus an artifact-only DeBERTa NLI adapter |
 | Structured risk | Interactions between amounts, state utilization, missing evidence, semantic scores, categories, and rule results | CatBoost binary classifier |
 
-The current development architecture supplies semantic probabilities as CatBoost input features and then
-calibrates CatBoost with a separately fitted Platt calibrator. The earlier logistic stacker reduced quality
-and is not the selected path. Fusion remains a research option only if it adds an independently trained,
-leakage-safe signal and passes non-degradation gates. Models produce evidence and probabilities; a
-deterministic, versioned policy always owns the final treatment.
+The current development architecture supplies semantic probabilities and deterministic rule summaries as
+CatBoost input features, then calibrates CatBoost with a separately fitted Platt calibrator. Semantic and
+rule results also remain independently visible to policy; the model cannot hide or overrule them. The
+earlier logistic stacker reduced quality and is not the selected path. Fusion remains a research option
+only if it adds an independently trained, leakage-safe signal and passes non-degradation gates. Models
+produce evidence and probabilities; a deterministic, versioned policy always owns the final treatment.
 
 The default policy behaves as follows:
 
