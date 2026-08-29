@@ -42,6 +42,7 @@ dist/
 # Node and Next.js outputs
 node_modules/
 .next/
+out/
 .turbo/
 coverage/
 npm-debug.log*

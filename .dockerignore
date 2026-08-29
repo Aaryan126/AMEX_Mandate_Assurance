@@ -8,9 +8,12 @@
 **/coverage
 **/playwright-report
 **/test-results
-artifacts/models
+artifacts
+ml
+products_train.csv
+sessions_train.csv
+presentation*.ppt*
 ml/data/generated
 ml/evaluation/reports
 *.sqlite3
 *.db
-

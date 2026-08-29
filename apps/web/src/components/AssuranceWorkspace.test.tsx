@@ -140,6 +140,8 @@ describe("AssuranceWorkspace", () => {
 
     const user = userEvent.setup();
     render(<AssuranceWorkspace />);
+    expect(await screen.findByText(/lightweight public demo · deterministic runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/public demo runtime: deterministic semantic and structured safeguards/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /interpret mandate/i }));
     expect(await screen.findByText(/total budget/i)).toBeInTheDocument();
     expect(screen.getByText("SIN → TYO")).toBeInTheDocument();

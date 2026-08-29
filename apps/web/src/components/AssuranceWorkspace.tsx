@@ -211,6 +211,12 @@ export function AssuranceWorkspace() {
     if (!proposal && !busy) void handleInterpret();
   }
 
+  const runtimeLabel = runtime?.ready
+    ? runtime.runtime_mode === "heuristic"
+      ? "Lightweight public demo · deterministic runtime"
+      : `${runtime.runtime_mode.replaceAll("_", " ")} · verified runtime`
+    : "Development v3 · simulated prototype";
+
   return (
     <main>
       <header className="hero">
@@ -221,9 +227,7 @@ export function AssuranceWorkspace() {
             <span>Mandate Assurance</span>
           </div>
           <span className="prototype-label">
-            {runtime?.ready
-              ? `${runtime.runtime_mode.replaceAll("_", " ")} · verified runtime`
-              : "Development v3 · simulated prototype"}
+            {runtimeLabel}
           </span>
         </nav>
         <div className="hero-content">
@@ -249,6 +253,12 @@ export function AssuranceWorkspace() {
             <span>Calibration <code>{runtime.calibrator ?? "not active"}</code></span>
             <span>Evidence <code>Ed25519 required</code></span>
           </div>
+        )}
+        {runtime?.runtime_mode === "heuristic" && (
+          <p className="public-runtime-note">
+            Public demo runtime: deterministic semantic and structured safeguards. Development-model evidence remains
+            separately labelled and promotion-gated.
+          </p>
         )}
       </header>
 

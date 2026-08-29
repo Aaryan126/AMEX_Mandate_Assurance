@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: ace-mandate-assurance-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: ACE_MODEL_MODE
+        value: heuristic
+      - key: ACE_DATABASE_URL
+        value: sqlite:////tmp/ace-public-demo.sqlite3
+      - key: ACE_WEB_STATIC_DIR
+        value: /workspace/apps/web/out

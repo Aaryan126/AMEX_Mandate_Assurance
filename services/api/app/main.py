@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .annotations import (
@@ -229,3 +232,11 @@ def adjudicate_annotation_route(example_id: str, decision: AnnotationDecision) -
 @app.get("/internal/annotations/progress", response_model=AnnotationProgress)
 def annotation_progress_route() -> AnnotationProgress:
     return configured_annotation_store().progress()
+
+
+web_static_value = os.getenv("ACE_WEB_STATIC_DIR")
+if web_static_value:
+    web_static_dir = Path(web_static_value).resolve()
+    if not (web_static_dir / "index.html").is_file():
+        raise RuntimeError(f"ACE_WEB_STATIC_DIR does not contain an exported web application: {web_static_dir}")
+    app.mount("/", StaticFiles(directory=web_static_dir, html=True), name="web")

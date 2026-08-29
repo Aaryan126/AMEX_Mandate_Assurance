@@ -10,6 +10,7 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:artifact": "ACE_E2E_MODEL_MODE=development_artifact playwright test",
+    "test:e2e:public": "playwright test --config=playwright.public.config.ts",
     "types:api": "python3 ../../services/api/scripts/export_openapi.py > /tmp/ace-mandate-openapi.json && openapi-typescript /tmp/ace-mandate-openapi.json -o src/lib/openapi.d.ts"
   },
   "dependencies": {

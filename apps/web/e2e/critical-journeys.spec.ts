@@ -18,6 +18,9 @@ test("valid merchant evidence is approved", async ({ page }) => {
 
 test("guided judge tour explains approve, step-up, and hold", async ({ page }) => {
   await page.goto("/");
+  if (process.env.ACE_E2E_MODEL_MODE !== "development_artifact") {
+    await expect(page.getByText(/lightweight public demo · deterministic runtime/i)).toBeVisible();
+  }
   const businessValue = page.getByLabel("Business value");
   await expect(businessValue).toContainText("Protection");
   await expect(businessValue).toContainText("Growth");

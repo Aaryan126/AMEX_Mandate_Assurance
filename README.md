@@ -333,6 +333,46 @@ stamped and upgraded without deleting its rows; the compatibility migration init
 `row_version` to zero for existing mandate state. Unknown schema differences stop startup with an explicit
 error instead of being silently overwritten.
 
+### Deploy the lightweight public demo on Render
+
+The public Round 1 deployment is deliberately smaller than the full local artifact runtime. One Docker
+service hosts both the exported judge interface and FastAPI behind the same URL. It retains authenticated
+mandates, signed simulated-cart evidence, deterministic semantic and structured safeguards, stateful policy,
+and the audit trail, while omitting PyTorch, Transformers, CatBoost, and the 776 MB semantic artifact. The
+interface labels this boundary as **Lightweight public demo · deterministic runtime**; offline development
+metrics remain separately labelled and promotion-gated.
+
+The root [`Dockerfile`](Dockerfile) and [`render.yaml`](render.yaml) define the free Render service. Validate
+the deployment contract with:
+
+```bash
+render blueprints validate render.yaml
+docker build -t ace-mandate-assurance-public-demo .
+docker run --rm -p 10000:10000 ace-mandate-assurance-public-demo
+npm --prefix apps/web run test:e2e:public
+```
+
+Then open <http://127.0.0.1:10000>. Render creates the public service from the Git-backed repository:
+
+```bash
+render services create \
+  --name ace-mandate-assurance-demo \
+  --type web_service \
+  --repo https://github.com/Aaryan126/AMEX_Mandate_Assurance.git \
+  --runtime docker \
+  --plan free \
+  --region oregon \
+  --health-check-path /health \
+  --env-var ACE_MODEL_MODE=heuristic \
+  --env-var ACE_DATABASE_URL=sqlite:////tmp/ace-public-demo.sqlite3 \
+  --env-var ACE_WEB_STATIC_DIR=/workspace/apps/web/out \
+  --output json
+```
+
+Free Render filesystems are ephemeral, so demo history resets after a restart or idle spin-down. This is
+intentional for the synthetic public walkthrough; the production architecture replaces SQLite with managed
+persistent storage.
+
 ## Develop and test locally
 
 Install Python and JavaScript dependencies:
