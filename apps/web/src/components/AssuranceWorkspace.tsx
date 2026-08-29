@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import type { ScenarioKey } from "@/lib/scenarios";
 import type {
   AuditEvent,
+  CartEvidence,
   Decision,
   EvaluationSummary,
   MandateProposal,
@@ -15,7 +16,9 @@ import type {
 import { AuditTimeline } from "./AuditTimeline";
 import { DecisionPanel } from "./DecisionPanel";
 import { EvaluationDashboard } from "./EvaluationDashboard";
+import { GuidedTour } from "./GuidedTour";
 import { MandateBuilder } from "./MandateBuilder";
+import { OutcomeComparison } from "./OutcomeComparison";
 import { ScenarioPicker, type ScenarioStep } from "./ScenarioPicker";
 
 export const DEFAULT_OBJECTIVE =
@@ -37,6 +40,8 @@ export function AssuranceWorkspace() {
   const [scenarioSteps, setScenarioSteps] = useState<ScenarioStep[]>([]);
   const [modifyingDecisionId, setModifyingDecisionId] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+  const [guidedMode, setGuidedMode] = useState(false);
+  const [activeCart, setActiveCart] = useState<CartEvidence | null>(null);
 
   useEffect(() => {
     api.runtimeStatus().then(setRuntime).catch(() => setRuntime(null));
@@ -55,6 +60,7 @@ export function AssuranceWorkspace() {
     setEvents([]);
     setResolution(null);
     setScenarioSteps([]);
+    setActiveCart(null);
     if (!modifyingDecisionId) {
       setActiveScenario(null);
       setCompletedScenarios([]);
@@ -120,6 +126,7 @@ export function AssuranceWorkspace() {
         if (first.treatment !== "APPROVE") throw new Error("The first stateful fulfillment did not approve.");
         const secondCart = await api.demoCart("stateful", 2);
         result = await api.evaluate(scenarioMandate.mandate.mandate_id, secondCart);
+        setActiveCart(secondCart);
         setScenarioSteps([
           { label: "First fulfillment", amountMinor: firstCart.total_amount_minor, treatment: first.treatment },
           { label: "Second fulfillment", amountMinor: secondCart.total_amount_minor, treatment: result.treatment },
@@ -127,6 +134,7 @@ export function AssuranceWorkspace() {
       } else {
         const scenarioEvidence = await api.demoCart(scenario);
         result = await api.evaluate(scenarioMandate.mandate.mandate_id, scenarioEvidence);
+        setActiveCart(scenarioEvidence);
         setScenarioSteps([
           { label: "Proposed transaction", amountMinor: scenarioEvidence.total_amount_minor, treatment: result.treatment },
         ]);
@@ -150,6 +158,7 @@ export function AssuranceWorkspace() {
       setDecision(null);
       setEvents([]);
       setScenarioSteps([]);
+      setActiveCart(null);
       setResolution("Revise the objective, interpret it again, then confirm the modified mandate.");
       return;
     }
@@ -193,6 +202,13 @@ export function AssuranceWorkspace() {
     setCompletedScenarios([]);
     setScenarioSteps([]);
     setModifyingDecisionId(null);
+    setGuidedMode(false);
+    setActiveCart(null);
+  }
+
+  function handleStartGuided() {
+    setGuidedMode(true);
+    if (!proposal && !busy) void handleInterpret();
   }
 
   return (
@@ -236,8 +252,35 @@ export function AssuranceWorkspace() {
         )}
       </header>
 
+      <section className="theme-value-strip" aria-label="Business value">
+        <article>
+          <strong>Protection</strong>
+          <span>Stops prohibited, manipulated, and cumulative mandate violations.</span>
+        </article>
+        <article>
+          <strong>Growth</strong>
+          <span>Recovers uncertain purchases through confirmation instead of blanket blocking.</span>
+        </article>
+        <article>
+          <strong>Productivity</strong>
+          <span>Automates evidence comparison and produces an audit-ready decision trail.</span>
+        </article>
+      </section>
+
       {error && <div className="global-message error" role="alert">{error}</div>}
       {resolution && <div className="global-message success" role="status">{resolution}</div>}
+
+      <GuidedTour
+        active={guidedMode}
+        busy={busy}
+        hasProposal={proposal != null}
+        hasMandate={mandate != null}
+        completedScenarios={completedScenarios}
+        onStart={handleStartGuided}
+        onConfirm={handleConfirm}
+        onRun={handleRun}
+        onExit={() => setGuidedMode(false)}
+      />
 
       <div className="workspace-grid">
         <MandateBuilder
@@ -259,6 +302,14 @@ export function AssuranceWorkspace() {
           completedScenarios={completedScenarios}
           steps={scenarioSteps}
           onReset={handleReset}
+          guidedMode={guidedMode}
+          onExitGuided={() => setGuidedMode(false)}
+        />
+        <OutcomeComparison
+          scenario={activeScenario}
+          proposal={proposal}
+          cart={activeCart}
+          decision={decision}
         />
         <DecisionPanel decision={decision} onResolve={handleResolve} busy={busy} />
         <AuditTimeline events={events} />

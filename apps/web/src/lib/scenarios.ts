@@ -1,5 +1,7 @@
 export type ScenarioKey = "valid" | "budget" | "semantic" | "injected" | "stateful" | "uncertain";
 
+export const guidedScenarioKeys: ScenarioKey[] = ["valid", "semantic", "injected"];
+
 export const scenarioLabels: Record<ScenarioKey, { title: string; description: string }> = {
   valid: { title: "Valid itinerary", description: "Refundable, economy, nonstop, S$840" },
   budget: { title: "Budget breach", description: "Matching itinerary at S$960" },

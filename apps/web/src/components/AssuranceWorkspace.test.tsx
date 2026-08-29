@@ -118,6 +118,10 @@ describe("AssuranceWorkspace", () => {
     render(<AssuranceWorkspace />);
     expect(screen.getByRole("button", { name: /valid itinerary/i })).toBeDisabled();
     expect(screen.getByRole("heading", { name: /decision evidence will appear here/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Business value")).toHaveTextContent("Protection");
+    expect(screen.getByLabelText("Business value")).toHaveTextContent("Growth");
+    expect(screen.getByLabelText("Business value")).toHaveTextContent("Productivity");
+    expect(screen.getByRole("button", { name: /start 90-second guided demo/i })).toBeEnabled();
   });
 
   it("interprets, confirms, evaluates, and resolves a step-up", async () => {
@@ -144,6 +148,8 @@ describe("AssuranceWorkspace", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /budget breach/i })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: /budget breach/i }));
     expect(await screen.findByRole("heading", { name: /confirmation needed/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /confirmed mandate vs proposed outcome/i })).toBeInTheDocument();
+    expect(screen.getByText(/proposed price exceeds the confirmed limit/i)).toBeInTheDocument();
     expect(screen.getByText("SINGLE_CART_BUDGET_EXCEEDED")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /approve once/i }));
     expect(await screen.findByText(/approved once by the card member/i)).toBeInTheDocument();

@@ -16,6 +16,30 @@ test("valid merchant evidence is approved", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Approved" })).toBeVisible();
 });
 
+test("guided judge tour explains approve, step-up, and hold", async ({ page }) => {
+  await page.goto("/");
+  const businessValue = page.getByLabel("Business value");
+  await expect(businessValue).toContainText("Protection");
+  await expect(businessValue).toContainText("Growth");
+  await expect(businessValue).toContainText("Productivity");
+
+  const tour = page.getByLabel("Guided judge tour");
+  await tour.getByRole("button", { name: /start 90-second guided demo/i }).click();
+  await tour.getByRole("button", { name: /confirm authenticated mandate/i }).click();
+  await tour.getByRole("button", { name: /run matching purchase/i }).click();
+  await expect(page.getByRole("heading", { name: "Approved" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /confirmed mandate vs proposed outcome/i })).toBeVisible();
+
+  await tour.getByRole("button", { name: /change refundability/i }).click();
+  await expect(page.getByRole("heading", { name: /confirmation needed/i })).toBeVisible();
+  await expect(page.getByText(/refundability changed from a required term/i)).toBeVisible();
+
+  await tour.getByRole("button", { name: /inject prohibited add-on/i }).click();
+  await expect(page.getByRole("heading", { name: /held for protection/i })).toBeVisible();
+  await expect(page.getByText(/gift-card subscription was inserted/i)).toBeVisible();
+  await expect(tour.getByRole("button", { name: /explore all six scenarios/i })).toBeVisible();
+});
+
 test("budget breach steps up and can be resolved", async ({ page }) => {
   await authenticate(page);
   await page.getByRole("button", { name: /budget breach/i }).click();

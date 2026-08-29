@@ -301,6 +301,16 @@ different semantic-score distributions than it saw in training.
 This mode is for the hackathon demonstration and local engineering verification. It executes the real
 frozen development artifacts; it does not relabel the candidate as production-promotable.
 
+For the presentation, use the single stable launcher. It builds the production web app, starts both
+services without source reloaders, checks readiness, and prints the verified runtime contract:
+
+```bash
+make pitch-demo
+```
+
+Then open <http://127.0.0.1:3000> and choose **Start 90-second guided demo**. Press `Ctrl+C` in the launcher
+terminal to stop both services.
+
 ```bash
 python3 -m pip install -e 'services/api[semantic,model-runtime]'
 make verify-artifact-runtime

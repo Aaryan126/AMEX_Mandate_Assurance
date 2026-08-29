@@ -39,15 +39,6 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
           <h2 id="decision-title">{treatment.label}</h2>
           <p>{decision.card_member_explanation}</p>
         </div>
-        <div className="risk-score">
-          <strong>{(decision.structured_risk_probability * 100).toFixed(1)}%</strong>
-          <span>{decision.model_versions.calibrator ? "calibrated intervention risk" : "risk signal"}</span>
-          {decision.model_versions.model_step_up_threshold != null && (
-            <small>
-              model step-up at {(decision.model_versions.model_step_up_threshold * 100).toFixed(1)}%
-            </small>
-          )}
-        </div>
       </div>
 
       {decision.reason_codes.length > 0 && (
@@ -60,6 +51,18 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
 
       <details>
         <summary>Inspect decision evidence</summary>
+        <div className="model-score-detail" aria-label="Model intervention score">
+          <div>
+            <strong>{(decision.structured_risk_probability * 100).toFixed(1)}%</strong>
+            <span>{decision.model_versions.calibrator ? "calibrated model intervention score" : "risk signal"}</span>
+          </div>
+          {decision.model_versions.model_step_up_threshold != null && (
+            <small>
+              The model escalates at {(decision.model_versions.model_step_up_threshold * 100).toFixed(1)}%.
+              Rules and semantic contradictions can independently require treatment.
+            </small>
+          )}
+        </div>
         <div className="evidence-table" role="table" aria-label="Rule results">
           {decision.rule_results.map((rule) => (
             <div className="evidence-row" role="row" key={rule.rule_id}>

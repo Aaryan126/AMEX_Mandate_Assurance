@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import math
 
-from .feature_contract import CATEGORICAL_FEATURES, NUMERIC_FEATURES as V2_NUMERIC_FEATURES
+from .feature_contract import CATEGORICAL_FEATURES
+from .feature_contract import NUMERIC_FEATURES as V2_NUMERIC_FEATURES
 
 FEATURE_VERSION = "features-v3"
 SEMANTIC_DERIVED_FEATURES = [
@@ -49,4 +50,3 @@ def feature_names_for_profile(profile: str) -> list[str]:
         return list(FEATURE_PROFILES[profile])
     except KeyError as exc:
         raise ValueError(f"unknown features-v3 profile: {profile}") from exc
-
