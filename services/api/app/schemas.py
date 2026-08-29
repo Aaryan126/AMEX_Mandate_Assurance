@@ -135,6 +135,7 @@ class RevocationResponse(StrictModel):
 class LineItem(StrictModel):
     line_item_id: str
     description: str = Field(min_length=1, max_length=2000)
+    evidence_text: str = Field(default="", max_length=5000)
     quantity: int = Field(ge=1, le=10000)
     amount_minor: int = Field(ge=0)
     attributes: dict[str, Any] = Field(default_factory=dict)
@@ -147,6 +148,7 @@ class CartEvidence(StrictModel):
     merchant_category: str
     evidence_source: str
     evidence_trust: str
+    evidence_sufficiency: Literal["sufficient", "ambiguous", "missing"] = "sufficient"
     currency: str = Field(pattern=r"^[A-Z]{3}$")
     total_amount_minor: int = Field(ge=0)
     line_items: list[LineItem] = Field(min_length=1)
@@ -209,6 +211,22 @@ class ModelVersions(StrictModel):
     calibrator: str | None = None
     policy: str
     features: str
+    runtime_mode: str = "heuristic"
+    candidate_status: str | None = None
+    model_step_up_threshold: float | None = Field(default=None, ge=0, le=1)
+
+
+class RuntimeStatus(StrictModel):
+    runtime_mode: str
+    ready: bool
+    semantic: str
+    catboost: str | None = None
+    calibrator: str | None = None
+    policy: str
+    features: str
+    candidate_status: str | None = None
+    model_step_up_threshold: float | None = Field(default=None, ge=0, le=1)
+    evidence_verification: str
 
 
 class DecisionResponse(StrictModel):
@@ -217,6 +235,7 @@ class DecisionResponse(StrictModel):
     cart_id: str
     treatment: Treatment
     risk_probability: float = Field(ge=0, le=1)
+    structured_risk_probability: float = Field(ge=0, le=1)
     uncertainty_band: str
     reason_codes: list[str]
     card_member_explanation: str

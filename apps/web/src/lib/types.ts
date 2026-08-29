@@ -10,3 +10,4 @@ export type ResolutionAction = components["schemas"]["ResolutionAction"];
 export type ResolutionResponse = components["schemas"]["ResolutionResponse"];
 export type AuditEvent = components["schemas"]["AuditEvent"];
 export type EvaluationSummary = components["schemas"]["EvaluationSummary"];
+export type RuntimeStatus = components["schemas"]["RuntimeStatus"];

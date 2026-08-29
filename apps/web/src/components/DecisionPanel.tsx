@@ -40,8 +40,13 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
           <p>{decision.card_member_explanation}</p>
         </div>
         <div className="risk-score">
-          <strong>{Math.round(decision.risk_probability * 100)}%</strong>
-          <span>deviation risk</span>
+          <strong>{(decision.structured_risk_probability * 100).toFixed(1)}%</strong>
+          <span>{decision.model_versions.calibrator ? "calibrated intervention risk" : "risk signal"}</span>
+          {decision.model_versions.model_step_up_threshold != null && (
+            <small>
+              model step-up at {(decision.model_versions.model_step_up_threshold * 100).toFixed(1)}%
+            </small>
+          )}
         </div>
       </div>
 
@@ -65,11 +70,49 @@ export function DecisionPanel({ decision, onResolve, busy }: Props) {
             </div>
           ))}
         </div>
-        <div className="runtime-contract">
+        {decision.semantic_results.length > 0 && (
+          <>
+            <p className="evidence-subheading">Semantic NLI evidence</p>
+            <div className="evidence-table" role="table" aria-label="Semantic model results">
+              {decision.semantic_results.map((result) => (
+                <div className="evidence-row" role="row" key={result.constraint_id}>
+                  <span role="cell">{result.constraint_id.replaceAll("_", " ")}</span>
+                  <span role="cell" className="semantic-scores">
+                    <code>C {(result.contradiction * 100).toFixed(1)}%</code>
+                    <code>E {(result.entailment * 100).toFixed(1)}%</code>
+                    <code>N {(result.neutral * 100).toFixed(1)}%</code>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <div className="runtime-contract" aria-label="Decision runtime contract">
+          <span>Mode <code>{decision.model_versions.runtime_mode}</code></span>
+          <span>Semantic <code>{decision.model_versions.semantic}</code></span>
           <span>Policy <code>{decision.model_versions.policy}</code></span>
           <span>
-            Runtime scorer{" "}
+            CatBoost{" "}
             <code>{decision.model_versions.catboost ?? "deterministic fallback"}</code>
+          </span>
+          <span>Calibration <code>{decision.model_versions.calibrator ?? "not active"}</code></span>
+          {decision.model_versions.model_step_up_threshold != null && (
+            <span>
+              Step-up threshold <code>{decision.model_versions.model_step_up_threshold.toFixed(4)}</code>
+            </span>
+          )}
+          {decision.model_versions.candidate_status && (
+            <span>Candidate gate <code>{decision.model_versions.candidate_status}</code></span>
+          )}
+          <span>
+            Cart signature{" "}
+            <code>
+              {decision.rule_results.some(
+                (rule) => rule.rule_id === "trusted_evidence" && rule.status === "PASS",
+              )
+                ? "Ed25519 verified"
+                : "not verified"}
+            </code>
           </span>
         </div>
       </details>

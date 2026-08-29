@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from app.evidence_auth import issue_signed_cart
 from app.schemas import CartEvidence, LineItem
 
 OBJECTIVE = (
@@ -50,7 +51,7 @@ def cart(
                 amount_minor=1000,
             )
         )
-    return CartEvidence(
+    unsigned = CartEvidence(
         cart_id=cart_id or f"cart_{uuid4().hex[:8]}",
         merchant_id="merchant_air_demo",
         merchant_category="AIRLINE",
@@ -60,5 +61,6 @@ def cart(
         total_amount_minor=amount_minor,
         line_items=items,
         created_at=datetime.now(UTC),
-        evidence_reference=f"evidence_{uuid4().hex[:8]}",
+        evidence_reference="unsigned",
     )
+    return issue_signed_cart(unsigned)

@@ -7,6 +7,7 @@ import type {
   MandateView,
   ResolutionAction,
   ResolutionResponse,
+  RuntimeStatus,
 } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -117,6 +118,14 @@ export const api = {
   },
   evaluationSummary() {
     return request<EvaluationSummary>("/v1/evaluation/summary");
+  },
+  runtimeStatus() {
+    return request<RuntimeStatus>("/v1/runtime/status");
+  },
+  demoCart(scenario: string, statefulPart: 1 | 2 = 1) {
+    return request<CartEvidence>(
+      `/v1/demo/carts/${encodeURIComponent(scenario)}?stateful_part=${statefulPart}`,
+    );
   },
   nextAnnotation(reviewerId: string, adjudicationOnly = false) {
     const query = new URLSearchParams({

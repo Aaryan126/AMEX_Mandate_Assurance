@@ -260,6 +260,7 @@ main {
 nav,
 .hero-content,
 .trust-strip,
+.runtime-strip,
 .workspace-grid,
 footer,
 .global-message {
@@ -380,6 +381,23 @@ h1 em {
   background: #42d1a7;
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgba(66, 209, 167, 0.1);
+}
+
+.runtime-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 0 0 18px;
+  position: relative;
+  z-index: 1;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 10px;
+}
+
+.runtime-strip code {
+  margin-left: 4px;
+  color: #9de4ff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .workspace-grid {
@@ -745,10 +763,18 @@ textarea {
 }
 
 .risk-score span {
+  display: block;
   color: var(--muted);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.risk-score small {
+  display: block;
+  margin-top: 5px;
+  color: var(--blue);
+  font-size: 10px;
 }
 
 .reason-list {
@@ -815,6 +841,22 @@ summary {
   margin-top: 14px;
   color: var(--muted);
   font-size: 10px;
+}
+
+.evidence-subheading {
+  margin: 18px 0 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.semantic-scores {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
 }
 
 .timeline {

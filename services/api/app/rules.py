@@ -5,6 +5,7 @@ from typing import Any
 
 from .auth import verify_reference
 from .commercial_rules import evaluate_commercial_rules
+from .evidence_auth import SIGNED_DEMO_EVIDENCE_SOURCES, verify_cart_reference
 from .schemas import (
     CartEvidence,
     Mandate,
@@ -13,11 +14,7 @@ from .schemas import (
     RuleStatus,
 )
 
-TRUSTED_EVIDENCE_SOURCES = {
-    "SIMULATED_MERCHANT_SIGNED_CART",
-    "SIMULATED_PSP_SIGNED_CART",
-    "AP2_SIGNED_CART",
-}
+TRUSTED_EVIDENCE_SOURCES = SIGNED_DEMO_EVIDENCE_SOURCES
 
 
 def _result(
@@ -93,14 +90,26 @@ def evaluate_rules(
         )
     )
 
-    trusted = cart.evidence_trust == "trusted" and cart.evidence_source in TRUSTED_EVIDENCE_SOURCES
+    signature_valid = verify_cart_reference(cart)
+    trusted = (
+        cart.evidence_trust == "trusted"
+        and cart.evidence_source in TRUSTED_EVIDENCE_SOURCES
+        and signature_valid
+    )
     results.append(
         _result(
             "trusted_evidence",
             RuleStatus.PASS if trusted else RuleStatus.NOT_EVALUABLE,
             "high",
-            {"trust": cart.evidence_trust, "source": cart.evidence_source},
-            sorted(TRUSTED_EVIDENCE_SOURCES),
+            {
+                "trust": cart.evidence_trust,
+                "source": cart.evidence_source,
+                "signature_valid": signature_valid,
+            },
+            {
+                "sources": sorted(TRUSTED_EVIDENCE_SOURCES),
+                "signature": "valid Ed25519 simulated issuer signature",
+            },
             cart.evidence_reference,
             None if trusted else "TRUSTED_CART_EVIDENCE_MISSING",
         )

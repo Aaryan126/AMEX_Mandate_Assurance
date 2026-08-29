@@ -11,4 +11,6 @@ The values are copied from the checksum-bound local artifacts recorded in
 - status and gate decision: `artifacts/models/development-v3-baselines/candidate-lock.json`.
 
 This file is presentation evidence, not a serving manifest. The candidate remains
-`LOCKED_NON_PROMOTABLE`, and the live prototype continues to use its deterministic fallback.
+`LOCKED_NON_PROMOTABLE`. The default runtime uses its deterministic fallback; the explicit local
+`development_artifact` mode may execute the checksum-bound candidate for demonstration without changing
+that promotion status.

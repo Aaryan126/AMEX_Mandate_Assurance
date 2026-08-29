@@ -53,6 +53,7 @@ def test_offline_and_runtime_feature_contracts_are_identical() -> None:
         merchant_category="RETAIL",
         evidence_source="SIMULATED_MERCHANT_SIGNED_CART",
         evidence_trust="trusted",
+        evidence_sufficiency="ambiguous",
         currency="USD",
         total_amount_minor=9_000,
         line_items=[

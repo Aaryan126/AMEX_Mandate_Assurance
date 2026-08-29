@@ -125,6 +125,37 @@ def test_evaluation_summary_reports_locked_development_v3(client: TestClient) ->
     assert summary["metrics"]["violation_recall"] == 0.7992957746478874
 
 
+def test_runtime_status_exposes_active_contract(client: TestClient) -> None:
+    response = client.get("/v1/runtime/status")
+    assert response.status_code == 200, response.text
+    status = response.json()
+    assert status["ready"] is True
+    assert status["runtime_mode"] == "heuristic"
+    assert status["semantic"] == "heuristic-nli-v1"
+    assert status["policy"] == "policy-treatment-contract-v3"
+    assert status["evidence_verification"].startswith("Ed25519")
+
+
+def test_demo_cart_is_signed_and_tampering_is_not_trusted(client: TestClient) -> None:
+    issued = client.get("/v1/demo/carts/valid")
+    assert issued.status_code == 200, issued.text
+    evidence = issued.json()
+    assert "." in evidence["evidence_reference"]
+
+    view = create_mandate(client)
+    evidence["line_items"][0]["evidence_text"] += " Tampered after issuance."
+    decision = client.post(
+        "/v1/decisions/evaluate",
+        json={"mandate_id": view["mandate"]["mandate_id"], "cart": evidence},
+        headers={"Idempotency-Key": "evaluate-tampered-evidence-001"},
+    )
+    assert decision.status_code == 200, decision.text
+    trusted_rule = next(
+        result for result in decision.json()["rule_results"] if result["rule_id"] == "trusted_evidence"
+    )
+    assert trusted_rule["status"] == "NOT_EVALUABLE"
+
+
 def test_validation_errors_are_versioned(client: TestClient) -> None:
     response = client.post("/v1/mandates/interpret", json={"objective_text": "short"})
     assert response.status_code == 422

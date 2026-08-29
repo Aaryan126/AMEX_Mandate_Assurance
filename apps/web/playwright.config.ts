@@ -1,5 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const modelMode = process.env.ACE_E2E_MODEL_MODE === "development_artifact"
+  ? "development_artifact"
+  : "heuristic";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
@@ -11,7 +15,8 @@ export default defineConfig({
   webServer: [
     {
       command:
-        "ACE_CORS_ORIGINS=http://127.0.0.1:3100 python3 -m uvicorn app.main:app --app-dir ../../services/api --port 8100",
+        `ACE_MODEL_MODE=${modelMode} ACE_CORS_ORIGINS=http://127.0.0.1:3100 ` +
+        "python3 -m uvicorn app.main:app --app-dir ../../services/api --port 8100",
       url: "http://127.0.0.1:8100/health",
       reuseExistingServer: false,
     },

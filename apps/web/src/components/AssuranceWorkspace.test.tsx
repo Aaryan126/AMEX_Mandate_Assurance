@@ -42,10 +42,46 @@ const mandateView = {
   state: { fulfilled_amount_minor: 0, fulfillment_count: 0, prior_transaction_ids: [] },
 };
 
+const runtimeStatus = {
+  runtime_mode: "heuristic",
+  ready: true,
+  semantic: "heuristic-nli-v1",
+  catboost: null,
+  calibrator: null,
+  policy: "policy-treatment-contract-v3",
+  features: "features-v2",
+  candidate_status: null,
+  model_step_up_threshold: null,
+  evidence_verification: "Ed25519 verification required",
+};
+
+const signedCart = {
+  schema_version: "1.0",
+  cart_id: "cart_budget_test",
+  merchant_id: "merchant_air_demo",
+  merchant_category: "AIRLINE",
+  evidence_source: "SIMULATED_MERCHANT_SIGNED_CART",
+  evidence_trust: "trusted",
+  evidence_sufficiency: "sufficient",
+  currency: "SGD",
+  total_amount_minor: 96000,
+  line_items: [{
+    line_item_id: "li_budget_flight",
+    description: "Refundable economy flight",
+    evidence_text: "This fare is refundable.",
+    quantity: 1,
+    amount_minor: 96000,
+    attributes: { refundable: true },
+  }],
+  created_at: "2026-08-15T00:00:01Z",
+  evidence_reference: "payload.signature",
+};
+
 const decision = {
   decision_id: "dec_test",
   treatment: "STEP_UP",
   risk_probability: 0.55,
+  structured_risk_probability: 0.55,
   uncertainty_band: "moderate",
   reason_codes: ["SINGLE_CART_BUDGET_EXCEEDED"],
   card_member_explanation: "The proposed purchase exceeds the authorized transaction budget.",
@@ -60,7 +96,12 @@ const decision = {
     },
   ],
   semantic_results: [],
-  model_versions: { semantic: "heuristic-v1", policy: "policy-v1" },
+  model_versions: {
+    semantic: "heuristic-v1",
+    policy: "policy-v1",
+    features: "features-v2",
+    runtime_mode: "heuristic",
+  },
   created_at: "2026-08-15T00:00:01Z",
 };
 
@@ -82,10 +123,12 @@ describe("AssuranceWorkspace", () => {
   it("interprets, confirms, evaluates, and resolves a step-up", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
+      .mockImplementationOnce(() => jsonResponse(runtimeStatus))
       .mockImplementationOnce(() => jsonResponse({ proposal, warnings: [] }))
       .mockImplementationOnce(() => jsonResponse(mandateView, 201))
       .mockImplementationOnce(() => jsonResponse({ events: [{ event_id: "evt_1", event_type: "MANDATE_AUTHENTICATED", payload: {}, created_at: "2026-08-15T00:00:00Z" }] }))
       .mockImplementationOnce(() => jsonResponse(mandateView, 201))
+      .mockImplementationOnce(() => jsonResponse(signedCart))
       .mockImplementationOnce(() => jsonResponse(decision))
       .mockImplementationOnce(() => jsonResponse({ events: [] }))
       .mockImplementationOnce(() => jsonResponse({ status: "resolved" }))
@@ -107,9 +150,9 @@ describe("AssuranceWorkspace", () => {
   });
 
   it("surfaces API failures accessibly", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementationOnce(() =>
-      jsonResponse({ error: { message: "Service unavailable" } }, 503),
-    );
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() => jsonResponse(runtimeStatus))
+      .mockImplementationOnce(() => jsonResponse({ error: { message: "Service unavailable" } }, 503));
     const user = userEvent.setup();
     render(<AssuranceWorkspace />);
     await user.click(screen.getByRole("button", { name: /interpret mandate/i }));
@@ -117,8 +160,9 @@ describe("AssuranceWorkspace", () => {
   });
 
   it("loads frozen benchmark evidence on demand", async () => {
-    vi.spyOn(globalThis, "fetch").mockImplementationOnce(() =>
-      jsonResponse({
+    vi.spyOn(globalThis, "fetch")
+      .mockImplementationOnce(() => jsonResponse(runtimeStatus))
+      .mockImplementationOnce(() => jsonResponse({
         dataset_version: "development-v3-candidate-selection-1000",
         model_version: "catboost-v1 + platt-calibrator-v3",
         status: "LOCKED_NON_PROMOTABLE",
@@ -134,8 +178,7 @@ describe("AssuranceWorkspace", () => {
         attack_families: { cumulative_overspend: { violation_recall: 1 } },
         latency_ms: {},
         generated_at: "2026-08-20T06:48:58Z",
-      }),
-    );
+      }));
     const user = userEvent.setup();
     render(<AssuranceWorkspace />);
     await user.click(screen.getByRole("button", { name: /load benchmark results/i }));
@@ -148,10 +191,12 @@ describe("AssuranceWorkspace", () => {
   it("moves a stepped-up decision into the mandate modification flow", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
+      .mockImplementationOnce(() => jsonResponse(runtimeStatus))
       .mockImplementationOnce(() => jsonResponse({ proposal, warnings: [] }))
       .mockImplementationOnce(() => jsonResponse(mandateView, 201))
       .mockImplementationOnce(() => jsonResponse({ events: [] }))
       .mockImplementationOnce(() => jsonResponse(mandateView, 201))
+      .mockImplementationOnce(() => jsonResponse(signedCart))
       .mockImplementationOnce(() => jsonResponse(decision))
       .mockImplementationOnce(() => jsonResponse({ events: [] }));
 

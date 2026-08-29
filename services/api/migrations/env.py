@@ -12,9 +12,10 @@ from app.database import Base
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-config.set_main_option(
-    "sqlalchemy.url", os.getenv("ACE_DATABASE_URL", config.get_main_option("sqlalchemy.url"))
-)
+database_url = config.get_main_option("sqlalchemy.url")
+if config.attributes.get("use_environment_url", True):
+    database_url = os.getenv("ACE_DATABASE_URL", database_url)
+config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
 
@@ -45,4 +46,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
-

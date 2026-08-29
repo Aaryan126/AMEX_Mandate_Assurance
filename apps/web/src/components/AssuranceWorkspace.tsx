@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { scenarioCart, type ScenarioKey } from "@/lib/scenarios";
+import type { ScenarioKey } from "@/lib/scenarios";
 import type {
   AuditEvent,
   Decision,
@@ -10,6 +10,7 @@ import type {
   MandateProposal,
   MandateView,
   ResolutionAction,
+  RuntimeStatus,
 } from "@/lib/types";
 import { AuditTimeline } from "./AuditTimeline";
 import { DecisionPanel } from "./DecisionPanel";
@@ -35,6 +36,11 @@ export function AssuranceWorkspace() {
   const [completedScenarios, setCompletedScenarios] = useState<ScenarioKey[]>([]);
   const [scenarioSteps, setScenarioSteps] = useState<ScenarioStep[]>([]);
   const [modifyingDecisionId, setModifyingDecisionId] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
+
+  useEffect(() => {
+    api.runtimeStatus().then(setRuntime).catch(() => setRuntime(null));
+  }, []);
 
   async function refreshAudit(mandateId: string) {
     const timeline = await api.audit(mandateId);
@@ -109,17 +115,17 @@ export function AssuranceWorkspace() {
 
       let result: Decision;
       if (scenario === "stateful") {
-        const firstCart = scenarioCart("stateful", 1);
+        const firstCart = await api.demoCart("stateful", 1);
         const first = await api.evaluate(scenarioMandate.mandate.mandate_id, firstCart);
         if (first.treatment !== "APPROVE") throw new Error("The first stateful fulfillment did not approve.");
-        const secondCart = scenarioCart("stateful", 2);
+        const secondCart = await api.demoCart("stateful", 2);
         result = await api.evaluate(scenarioMandate.mandate.mandate_id, secondCart);
         setScenarioSteps([
           { label: "First fulfillment", amountMinor: firstCart.total_amount_minor, treatment: first.treatment },
           { label: "Second fulfillment", amountMinor: secondCart.total_amount_minor, treatment: result.treatment },
         ]);
       } else {
-        const scenarioEvidence = scenarioCart(scenario);
+        const scenarioEvidence = await api.demoCart(scenario);
         result = await api.evaluate(scenarioMandate.mandate.mandate_id, scenarioEvidence);
         setScenarioSteps([
           { label: "Proposed transaction", amountMinor: scenarioEvidence.total_amount_minor, treatment: result.treatment },
@@ -198,7 +204,11 @@ export function AssuranceWorkspace() {
             <strong>ACE</strong>
             <span>Mandate Assurance</span>
           </div>
-          <span className="prototype-label">Development v3 · simulated prototype</span>
+          <span className="prototype-label">
+            {runtime?.ready
+              ? `${runtime.runtime_mode.replaceAll("_", " ")} · verified runtime`
+              : "Development v3 · simulated prototype"}
+          </span>
         </nav>
         <div className="hero-content">
           <div>
@@ -216,6 +226,14 @@ export function AssuranceWorkspace() {
           <span><i /> Stateful policy</span>
           <span><i /> Versioned audit</span>
         </div>
+        {runtime && (
+          <div className="runtime-strip" aria-label="Active runtime contract">
+            <span>Semantic <code>{runtime.semantic}</code></span>
+            <span>Structured <code>{runtime.catboost ?? "deterministic fallback"}</code></span>
+            <span>Calibration <code>{runtime.calibrator ?? "not active"}</code></span>
+            <span>Evidence <code>Ed25519 required</code></span>
+          </div>
+        )}
       </header>
 
       {error && <div className="global-message error" role="alert">{error}</div>}

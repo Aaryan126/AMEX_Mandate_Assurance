@@ -20,6 +20,8 @@ and authorization capabilities described publicly for Agentic Commerce Experienc
 > every declared development, family-recall, calibration, friction, and independent-evaluation gate.
 > The later Stage A, B, and C remediation candidates did not pass their declared semantic-recall gates,
 > so they did not replace v3 or change the live decision architecture.
+> For transparent demonstration, an explicit `development_artifact` runtime can execute the locked v3
+> candidate end to end while preserving and displaying its `LOCKED_NON_PROMOTABLE` governance status.
 
 ## The problem
 
@@ -119,7 +121,7 @@ validate that action. The decision service keeps these inputs separate:
 |---|---|---|
 | Authenticated mandate | Records confirmed Card Member intent | Signed, immutable, and versioned |
 | Agent proposal | Initiates the purchase workflow | Untrusted orchestration input |
-| Cart evidence | Describes the actual commercial outcome | Must come from a recognized simulated trusted source |
+| Cart evidence | Describes the actual commercial outcome | Ed25519-signed by a recognized simulated evidence issuer; content changes invalidate trust |
 | Mandate state | Records prior spend, fulfillments, and status | Updated transactionally with optimistic concurrency |
 | Model artifacts | Produce semantic and structured-risk signals | Local, versioned, and checksum-verified |
 
@@ -170,12 +172,14 @@ an uncalibrated score as calibrated.
 - Mandate interpretation, review, simulated Ed25519 signing, confirmation, revocation, and immutable
   versioning.
 - Six reproducible, isolated agent-transaction scenarios with guided progress and one-click reset.
-- Trusted-cart evidence display, decision reasons, expandable rule evidence, step-up resolution, and an
+- Server-issued, Ed25519-signed demo-cart evidence, decision reasons, expandable rule evidence, step-up resolution, and an
   append-only reviewer timeline.
 - Card Member resolution through approve-once, mandate replacement, or decline.
 - A development-v3 evidence dashboard showing exact model quality, calibration, gate results, and the
   locked non-promotable status.
 - OpenAPI-generated TypeScript contracts to detect frontend/backend schema drift.
+- An active-runtime strip and per-decision contract showing the exact NLI, CatBoost, calibrator, threshold,
+  candidate gate, policy version, and cart-signature result used for that decision.
 
 ### Decision service
 
@@ -186,6 +190,8 @@ an uncalibrated score as calibrated.
 - Transactional fulfillment updates with optimistic row-version protection against stale concurrent writes.
 - SQLite persistence managed by Alembic, including normalized mandates, constraints, carts, line items,
   decisions, signals, resolutions, model metadata, and audit events.
+- A checksum- and candidate-lock-bound development runtime for the frozen English NLI model, CatBoost
+  candidate, Platt calibrator, and policy-tuning threshold. Startup fails if any binding is inconsistent.
 
 ### Model and evaluation pipeline
 
@@ -289,6 +295,33 @@ The base Docker workflow requires no cloud credentials and uses the deterministi
 fallback. A trained fusion bundle is loaded only when a promoted serving manifest **and** an explicitly
 configured, version-matching semantic artifact are both present; this prevents serving a fusion model with
 different semantic-score distributions than it saw in training.
+
+### Run the complete development-v3 artifact path
+
+This mode is for the hackathon demonstration and local engineering verification. It executes the real
+frozen development artifacts; it does not relabel the candidate as production-promotable.
+
+```bash
+python3 -m pip install -e 'services/api[semantic,model-runtime]'
+make verify-artifact-runtime
+npm --prefix apps/web run test:e2e:artifact
+
+# Terminal 1: checksum verification, model loading, and API
+make demo-artifact-api
+
+# Terminal 2: web workspace
+npm --prefix apps/web run dev
+```
+
+Open <http://localhost:3000>. The header and every decision report
+`english-nli-v3`, `catboost-v1`, `platt-calibrator-v3`, threshold `0.7599186405522896`, signed-cart
+verification, and the unchanged `LOCKED_NON_PROMOTABLE` candidate status. No external AI API or cloud
+credential is required; all model inference is local.
+
+API startup applies the Alembic schema automatically. A recognized pre-Alembic prototype database is
+stamped and upgraded without deleting its rows; the compatibility migration initializes the concurrency
+`row_version` to zero for existing mandate state. Unknown schema differences stop startup with an explicit
+error instead of being silently overwritten.
 
 ## Develop and test locally
 
@@ -461,8 +494,9 @@ The v3 training contract uses 4,000 `train_fit` rows, 1,000 calibration rows, 1,
 and a 1,000-row candidate-selection role. Relationship groups cannot cross these roles. Training never
 marks its own output as serving-approved, and the locked v3 candidate did not create a serving manifest
 because it missed the recall gates. The default Docker demo therefore exercises the v3 policy contract
-through the deterministic semantic/structured fallback; the CatBoost results below remain offline model
-evidence rather than a production-serving claim.
+through the deterministic semantic/structured fallback. The explicit local `development_artifact` mode
+can execute those exact artifacts for an end-to-end demonstration, but exposes the failed promotion status
+and must not be described as production serving.
 
 ### Current development-v3 result
 

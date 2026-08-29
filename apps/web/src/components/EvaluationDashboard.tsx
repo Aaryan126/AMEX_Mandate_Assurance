@@ -32,8 +32,8 @@ export function EvaluationDashboard({ summary, onLoad, busy }: Props) {
       {!summary ? (
         <div className="evaluation-empty">
           <p className="supporting-copy">
-            Load the locked 1,000-row candidate-selection result. It is offline development evidence,
-            not the scorer serving this simulated workflow.
+            Load the locked 1,000-row candidate-selection result. It remains offline development
+            evidence; the active runtime contract is shown above and with every decision.
           </p>
           <button className="button secondary" type="button" onClick={onLoad} disabled={busy}>
             Load benchmark results

@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -18,9 +18,11 @@ from .annotations import (
 )
 from .config import settings
 from .database import create_schema, get_session
+from .demo_evidence import DemoScenario, signed_demo_cart
 from .errors import DomainError
 from .schemas import (
     AuditTimeline,
+    CartEvidence,
     ConfirmMandateRequest,
     DecisionResponse,
     ErrorDetail,
@@ -33,6 +35,7 @@ from .schemas import (
     ResolutionResponse,
     ResolveDecisionRequest,
     RevocationResponse,
+    RuntimeStatus,
 )
 from .service import (
     confirm_mandate,
@@ -43,12 +46,15 @@ from .service import (
     interpret_mandate,
     resolve_decision,
     revoke_mandate,
+    runtime_status,
 )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     create_schema()
+    if settings.model_mode == "development_artifact":
+        runtime_status()
     yield
 
 
@@ -123,6 +129,16 @@ def idempotency_key(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "schema_version": settings.schema_version}
+
+
+@app.get("/v1/runtime/status", response_model=RuntimeStatus)
+def runtime_status_route() -> RuntimeStatus:
+    return runtime_status()
+
+
+@app.get("/v1/demo/carts/{scenario}", response_model=CartEvidence)
+def demo_cart_route(scenario: DemoScenario, stateful_part: int = Query(default=1, ge=1, le=2)) -> CartEvidence:
+    return signed_demo_cart(scenario, stateful_part)
 
 
 @app.post("/v1/mandates/interpret", response_model=InterpretationResponse)

@@ -47,6 +47,7 @@ from .schemas import (
     ResolutionResponse,
     ResolveDecisionRequest,
     RevocationResponse,
+    RuntimeStatus,
     utc_now,
 )
 from .semantic import SemanticScorer, configured_semantic_scorer
@@ -247,6 +248,23 @@ def _semantic_scorer() -> SemanticScorer:
     return configured_semantic_scorer()
 
 
+def runtime_status() -> RuntimeStatus:
+    semantic = configured_semantic_scorer()
+    structured = configured_structured_scorer()
+    return RuntimeStatus(
+        runtime_mode=structured.runtime_mode,
+        ready=True,
+        semantic=semantic.version,
+        catboost=structured.catboost_version,
+        calibrator=structured.calibrator_version,
+        policy=settings.policy_version,
+        features=settings.feature_version,
+        candidate_status=structured.candidate_status,
+        model_step_up_threshold=structured.step_up_threshold,
+        evidence_verification="Ed25519 verification required",
+    )
+
+
 def _fulfill(session: Session, state_record: MandateStateRecord, cart_id: str, amount_minor: int) -> None:
     transactions = json.loads(state_record.prior_transaction_ids_json)
     if cart_id in transactions:
@@ -311,6 +329,7 @@ def evaluate_decision(session: Session, request: EvaluateDecisionRequest, idempo
         cart_id=request.cart.cart_id,
         treatment=policy.treatment,
         risk_probability=policy.risk_probability,
+        structured_risk_probability=structured_probability,
         uncertainty_band=policy.uncertainty_band,
         reason_codes=reason_codes,
         card_member_explanation=card_explanation,
@@ -324,6 +343,9 @@ def evaluate_decision(session: Session, request: EvaluateDecisionRequest, idempo
             calibrator=structured_scorer.calibrator_version,
             policy=settings.policy_version,
             features=settings.feature_version,
+            runtime_mode=structured_scorer.runtime_mode,
+            candidate_status=structured_scorer.candidate_status,
+            model_step_up_threshold=structured_scorer.step_up_threshold,
         ),
         evidence_references=[
             view.mandate.authorization_reference,
@@ -401,6 +423,7 @@ def evaluate_decision(session: Session, request: EvaluateDecisionRequest, idempo
             "cart_id": request.cart.cart_id,
             "treatment": response.treatment,
             "risk_probability": response.risk_probability,
+            "structured_risk_probability": response.structured_risk_probability,
             "reason_codes": reason_codes,
             "model_versions": response.model_versions.model_dump(mode="json"),
         },

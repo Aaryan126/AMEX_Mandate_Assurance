@@ -3,6 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 async function authenticate(page: import("@playwright/test").Page) {
   await page.goto("/");
+  await expect(page.getByLabel("Active runtime contract")).toContainText("Semantic");
   await page.getByRole("button", { name: /interpret mandate/i }).click();
   await expect(page.getByText(/total budget/i)).toBeVisible();
   await page.getByRole("button", { name: /confirm & authenticate/i }).click();
@@ -28,6 +29,17 @@ test("semantic substitution escalates without a model-only hold", async ({ page 
   await page.getByRole("button", { name: /semantic substitution/i }).click();
   await expect(page.getByRole("heading", { name: /confirmation needed/i })).toBeVisible();
   await expect(page.getByLabel("Decision reasons").getByText("REQUIRED_ATTRIBUTE_CONTRADICTED")).toBeVisible();
+  if (process.env.ACE_E2E_MODEL_MODE === "development_artifact") {
+    await page.getByText("Inspect decision evidence").click();
+    await expect(page.getByLabel("Semantic model results")).toBeVisible();
+    const contract = page.getByLabel("Decision runtime contract");
+    await expect(contract).toContainText("english-nli-v3");
+    await expect(contract).toContainText("catboost-v1");
+    await expect(contract).toContainText("platt-calibrator-v3");
+    await expect(contract).toContainText("0.7599");
+    await expect(contract).toContainText("LOCKED_NON_PROMOTABLE");
+    await expect(contract).toContainText("Ed25519 verified");
+  }
 });
 
 test("scenario isolation keeps earlier approvals from changing later outcomes", async ({ page }) => {

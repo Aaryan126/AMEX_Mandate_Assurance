@@ -10,6 +10,8 @@ from typing import Protocol
 
 from .schemas import CartEvidence, Constraint, ConstraintType, SemanticResult
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
 
 class SemanticScorer(Protocol):
     version: str
@@ -24,7 +26,9 @@ class HeuristicSemanticScorer:
 
     def score(self, constraints: list[Constraint], cart: CartEvidence) -> list[SemanticResult]:
         results: list[SemanticResult] = []
-        combined_description = " ".join(item.description.lower() for item in cart.line_items)
+        combined_description = " ".join(
+            (item.evidence_text or item.description).lower() for item in cart.line_items
+        )
         attributes = [item.attributes for item in cart.line_items]
         for constraint in constraints:
             if constraint.type != ConstraintType.SEMANTIC_ATTRIBUTE:
@@ -96,7 +100,7 @@ class ArtifactSemanticScorer:
         semantic_constraints = [value for value in constraints if value.type == ConstraintType.SEMANTIC_ATTRIBUTE]
         if not semantic_constraints:
             return []
-        evidence = "\n".join(value.description for value in cart.line_items)
+        evidence = "\n".join(value.evidence_text or value.description for value in cart.line_items)
         hypotheses = [
             f"The proposed purchase satisfies this requirement: {value.value}." for value in semantic_constraints
         ]
@@ -130,10 +134,17 @@ class ArtifactSemanticScorer:
 
 @lru_cache(maxsize=1)
 def configured_semantic_scorer() -> SemanticScorer:
-    if os.getenv("ACE_MODEL_MODE") == "unavailable":
+    model_mode = os.getenv("ACE_MODEL_MODE", "heuristic")
+    if model_mode == "unavailable":
         return UnavailableSemanticScorer()
     artifact_value = os.getenv("ACE_SEMANTIC_ARTIFACT")
+    if model_mode == "development_artifact" and not artifact_value:
+        artifact_value = str(REPOSITORY_ROOT / "artifacts/models/semantic-fast-track")
     artifact = Path(artifact_value) if artifact_value else None
-    if os.getenv("ACE_MODEL_MODE") == "artifact" and artifact is not None and (artifact / "manifest.json").exists():
+    if model_mode == "development_artifact":
+        if artifact is None or not (artifact / "manifest.json").is_file():
+            raise RuntimeError("development artifact runtime is missing the semantic model manifest")
+        return ArtifactSemanticScorer(artifact)
+    if model_mode == "artifact" and artifact is not None and (artifact / "manifest.json").exists():
         return ArtifactSemanticScorer(artifact)
     return HeuristicSemanticScorer()

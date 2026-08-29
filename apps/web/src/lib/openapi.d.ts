@@ -21,6 +21,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/runtime/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Runtime Status Route */
+        get: operations["runtime_status_route_v1_runtime_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/demo/carts/{scenario}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Demo Cart Route */
+        get: operations["demo_cart_route_v1_demo_carts__scenario__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/mandates/interpret": {
         parameters: {
             query?: never;
@@ -270,6 +304,10 @@ export interface components {
             completed_reviews: number;
             /** Needs Adjudication */
             needs_adjudication: boolean;
+            /** Prior Reviews */
+            prior_reviews?: {
+                [key: string]: unknown;
+            }[];
         };
         /** AnnotationProgress */
         AnnotationProgress: {
@@ -371,6 +409,12 @@ export interface components {
             evidence_source: string;
             /** Evidence Trust */
             evidence_trust: string;
+            /**
+             * Evidence Sufficiency
+             * @default sufficient
+             * @enum {string}
+             */
+            evidence_sufficiency: "sufficient" | "ambiguous" | "missing";
             /** Currency */
             currency: string;
             /** Total Amount Minor */
@@ -422,6 +466,8 @@ export interface components {
             treatment: components["schemas"]["Treatment"];
             /** Risk Probability */
             risk_probability: number;
+            /** Structured Risk Probability */
+            structured_risk_probability: number;
             /** Uncertainty Band */
             uncertainty_band: string;
             /** Reason Codes */
@@ -524,6 +570,11 @@ export interface components {
             line_item_id: string;
             /** Description */
             description: string;
+            /**
+             * Evidence Text
+             * @default
+             */
+            evidence_text: string;
             /** Quantity */
             quantity: number;
             /** Amount Minor */
@@ -714,6 +765,15 @@ export interface components {
             policy: string;
             /** Features */
             features: string;
+            /**
+             * Runtime Mode
+             * @default heuristic
+             */
+            runtime_mode: string;
+            /** Candidate Status */
+            candidate_status?: string | null;
+            /** Model Step Up Threshold */
+            model_step_up_threshold?: number | null;
         };
         /**
          * Operator
@@ -783,6 +843,29 @@ export interface components {
          * @enum {string}
          */
         RuleStatus: "PASS" | "WARN" | "FAIL" | "NOT_EVALUABLE";
+        /** RuntimeStatus */
+        RuntimeStatus: {
+            /** Runtime Mode */
+            runtime_mode: string;
+            /** Ready */
+            ready: boolean;
+            /** Semantic */
+            semantic: string;
+            /** Catboost */
+            catboost?: string | null;
+            /** Calibrator */
+            calibrator?: string | null;
+            /** Policy */
+            policy: string;
+            /** Features */
+            features: string;
+            /** Candidate Status */
+            candidate_status?: string | null;
+            /** Model Step Up Threshold */
+            model_step_up_threshold?: number | null;
+            /** Evidence Verification */
+            evidence_verification: string;
+        };
         /** SemanticResult */
         SemanticResult: {
             /** Constraint Id */
@@ -837,6 +920,59 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    runtime_status_route_v1_runtime_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuntimeStatus"];
+                };
+            };
+        };
+    };
+    demo_cart_route_v1_demo_carts__scenario__get: {
+        parameters: {
+            query?: {
+                stateful_part?: number;
+            };
+            header?: never;
+            path: {
+                scenario: "valid" | "budget" | "semantic" | "injected" | "stateful" | "uncertain";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CartEvidence"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

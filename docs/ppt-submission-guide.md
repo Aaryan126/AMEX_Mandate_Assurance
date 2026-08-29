@@ -36,8 +36,9 @@ The presentation must consistently state that:
 
 - development v3 is the only learned-model version discussed publicly;
 - the calibrated CatBoost candidate is `LOCKED_NON_PROMOTABLE`;
-- the trained CatBoost model is offline development evidence, not the live decision path;
-- the live prototype uses deterministic fallback behavior under the v3 policy contract;
+- the explicit development-artifact demo executes the frozen NLI, CatBoost, Platt calibrator, and locked
+  threshold without representing them as production-promoted;
+- the deterministic path remains the default and recovery mode under the same v3 policy contract;
 - no real Amex Card Member, transaction, merchant, or internal-system data was used;
 - LLM-assisted labels are not human expert validation;
 - loyalty, spend, dispute reduction, and operational savings are pilot hypotheses—not measured outcomes; and
@@ -954,8 +955,9 @@ Place this as the closing line beneath the roadmap or in a strong bottom-right c
 
 Use the complete diagram from [`architecture.md`](../architecture.md). Clearly distinguish:
 
-- the live deterministic fallback;
-- offline English NLI and CatBoost evidence;
+- the signed demo-evidence boundary;
+- the development-only English NLI and calibrated CatBoost runtime;
+- the deterministic recovery path;
 - the versioned policy authority boundary;
 - fulfillment and audit state; and
 - the external payment-treatment boundary.
